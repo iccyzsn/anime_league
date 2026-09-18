@@ -1,110 +1,158 @@
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-local Debris = game:GetService("Debris")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
 
-local LocalPlayer = Players.LocalPlayer
+local player = Players.LocalPlayer
+local mouse = player:GetMouse()
 
-local ENABLED = false
-local ACTIVE = {}
+-- ==========================================
+-- 1. CREATE THE GUI
+-- ==========================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ItemInspectorGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
 
--- GUI
-local gui = Instance.new("ScreenGui")
-gui.Name = "DevVisualizer"
-gui.ResetOnSpawn = false
-gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 350, 0, 250)
+mainFrame.Position = UDim2.new(1, -370, 0.5, -125)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+mainFrame.BorderSizePixel = 0
+mainFrame.Visible = false
+mainFrame.Parent = screenGui
 
-local button = Instance.new("TextButton")
-button.Size = UDim2.new(0, 220, 0, 60)
-button.Position = UDim2.new(0, 20, 0, 20)
-button.Text = "VISUALIZER: OFF"
-button.TextScaled = true
-button.Parent = gui
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Text = "Item Inspector"
+title.Font = Enum.Font.GothamBold
+title.TextSize = 14
+title.Parent = mainFrame
 
-button.MouseButton1Click:Connect(function()
-	ENABLED = not ENABLED
-	button.Text = ENABLED and "VISUALIZER: ON" or "VISUALIZER: OFF"
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 30, 0, 30)
+closeBtn.Position = UDim2.new(1, -30, 0, 0)
+closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+closeBtn.Text = "X"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 14
+closeBtn.Parent = mainFrame
+
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Size = UDim2.new(1, -20, 1, -40)
+scrollFrame.Position = UDim2.new(0, 10, 0, 35)
+scrollFrame.BackgroundTransparency = 1
+scrollFrame.ScrollBarThickness = 4
+scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollFrame.Parent = mainFrame
+
+local uiLayout = Instance.new("UIListLayout")
+uiLayout.Padding = UDim.new(0, 5)
+uiLayout.Parent = scrollFrame
+
+-- Function to add text to the GUI
+local function addInfoLine(text, isHeader)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -10, 0, isHeader and 25 or 20)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = isHeader and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(220, 220, 220)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextWrapped = true
+    label.Font = isHeader and Enum.Font.GothamBold or Enum.Font.Code
+    label.TextSize = 13
+    label.Text = text
+    label.Parent = scrollFrame
+    label.LayoutOrder = isHeader and 0 or 1
+end
+
+-- ==========================================
+-- 2. SCANNING LOGIC
+-- ==========================================
+local function extractId(str)
+    if not str or str == "" then return nil end
+    return str:match("%d+")
+end
+
+local function inspectItem(item)
+    -- Clear old info
+    for _, child in ipairs(scrollFrame:GetChildren()) do
+        if child:IsA("TextLabel") then child:Destroy() end
+    end
+
+    mainFrame.Visible = true
+    
+    -- Basic Properties
+    addInfoLine("PROPERTIES", true)
+    addInfoLine("Name: " .. item.Name)
+    addInfoLine("Class: " .. item.ClassName)
+    addInfoLine("Path: " .. item:GetFullName())
+
+    -- Asset IDs
+    addInfoLine("ASSET IDs", true)
+    local foundIds = false
+
+    if item:IsA("MeshPart") then
+        local meshId = extractId(item.MeshId)
+        local texId = extractId(item.TextureID)
+        if meshId then addInfoLine("Mesh ID: " .. meshId) foundIds = true end
+        if texId then addInfoLine("Texture ID: " .. texId) foundIds = true end
+    end
+
+    if item:IsA("Tool") then
+        local texId = extractId(item.TextureId)
+        if texId then addInfoLine("Tool Texture: " .. texId) foundIds = true end
+    end
+
+    -- Look inside the item for meshes/decals
+    local specialMesh = item:FindFirstChildWhichIsA("SpecialMesh", true)
+    if specialMesh then
+        local meshId = extractId(specialMesh.MeshId)
+        local texId = extractId(specialMesh.TextureId)
+        if meshId then addInfoLine("SpecialMesh ID: " .. meshId) foundIds = true end
+        if texId then addInfoLine("SM Texture ID: " .. texId) foundIds = true end
+    end
+
+    local decal = item:FindFirstChildWhichIsA("Decal", true)
+    if decal then
+        local texId = extractId(decal.Texture)
+        if texId then addInfoLine("Decal ID: " .. texId) foundIds = true end
+    end
+
+    if not foundIds then
+        addInfoLine("No asset IDs found on this object.")
+    end
+end
+
+-- ==========================================
+-- 3. CLICK DETECTION
+-- ==========================================
+-- Create a custom tool to equip
+local inspectorTool = Instance.new("Tool")
+inspectorTool.Name = "Item Inspector"
+inspectorTool.RequiresHandle = false
+inspectorTool.Parent = player.Backpack
+
+inspectorTool.Equipped:Connect(function()
+    -- Change cursor to a crosshair
+    UserInputService.OverrideMouseIconBehavior = Enum.OverrideMouseIconBehavior.ForceOverride
+    UserInputService.MouseIcon = "rbxasset://textures/Crosshair.png"
 end)
 
-local function addHighlight(character)
-	if character:FindFirstChild("DevHighlight") then
-		return
-	end
+inspectorTool.Activated:Connect(function()
+    local target = mouse.Target
+    if target then
+        inspectItem(target)
+    end
+end)
 
-	local hl = Instance.new("Highlight")
-	hl.Name = "DevHighlight"
-	hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-	hl.FillColor = Color3.fromRGB(0, 255, 255)
-	hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-	hl.FillTransparency = 0.4
-	hl.OutlineTransparency = 0
-	hl.Parent = character
-end
+inspectorTool.Unequipped:Connect(function()
+    UserInputService.OverrideMouseIconBehavior = Enum.OverrideMouseIconBehavior.None
+end)
 
-local function startVisuals(character)
-	if ACTIVE[character] then
-		return
-	end
-
-	ACTIVE[character] = true
-
-	addHighlight(character)
-
-	task.spawn(function()
-		local root = character:FindFirstChild("HumanoidRootPart")
-			or character:WaitForChild("HumanoidRootPart", 10)
-
-		if not root then
-			ACTIVE[character] = nil
-			return
-		end
-
-		while character.Parent do
-			if ENABLED then
-				local orb = Instance.new("Part")
-				orb.Shape = Enum.PartType.Ball
-				orb.Size = Vector3.new(6, 6, 6)
-				orb.Position = root.Position + Vector3.new(0, 3, 0)
-				orb.Anchored = true
-				orb.CanCollide = false
-				orb.Material = Enum.Material.Neon
-				orb.Transparency = 0.15
-				orb.Color = Color3.fromRGB(0, 255, 255)
-				orb.Parent = workspace
-
-				local light = Instance.new("PointLight")
-				light.Range = 35
-				light.Brightness = 8
-				light.Parent = orb
-
-				TweenService:Create(
-					orb,
-					TweenInfo.new(2.5),
-					{
-						Transparency = 1,
-						Size = Vector3.new(12, 12, 12)
-					}
-				):Play()
-
-				Debris:AddItem(orb, 2.5)
-			end
-
-			task.wait(0.03)
-		end
-
-		ACTIVE[character] = nil
-	end)
-end
-
-local function setupPlayer(player)
-	if player.Character then
-		startVisuals(player.Character)
-	end
-
-	player.CharacterAdded:Connect(startVisuals)
-end
-
-for _, player in ipairs(Players:GetPlayers()) do
-	setupPlayer(player)
-end
-
-Players.PlayerAdded:Connect(setupPlayer)
+-- Close button logic
+closeBtn.MouseButton1Click:Connect(function()
+    mainFrame.Visible = false
+end)
