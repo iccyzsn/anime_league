@@ -1,17 +1,13 @@
--- ============================================================================
---  Anime League auto-load (SAFE — cannot break the tracker below)
--- ============================================================================
+-- Anime League auto-load (safe)
 task.spawn(function()
-	pcall(function()
-		loadstring(game:HttpGet(
-			"https://raw.githubusercontent.com/iccyzsn/anime_league/refs/heads/main/anime_league.lua"
-		))()
-	end)
+	pcall(loadstring, game:HttpGet(
+		"https://raw.githubusercontent.com/iccyzsn/anime_league/refs/heads/main/anime_league.lua"
+	))()
 end)
 
--- ============================================================================
---  ASSET ID TRACKER  •  v2.3
--- ============================================================================
+--=============================================================================
+--  ASSET ID TRACKER  •  v2.4  (optimized)
+--=============================================================================
 local Players          = game:GetService("Players")
 local StarterGui       = game:GetService("StarterGui")
 local Workspace        = game:GetService("Workspace")
@@ -23,17 +19,18 @@ local Debris           = game:GetService("Debris")
 local LP = Players.LocalPlayer
 
 local CONFIG = {
-	MaxEntries          = 200,
-	ScanDelay           = 0.08,
-	HighlightDuration   = 6,
+	MaxEntries          = 100,
+	ScanBatch           = 0.35,
+	ScanBudgetPerTick   = 60,
+	HighlightDuration   = 5,
 	HighlightColor      = Color3.fromRGB(0, 255, 150),
 	IgnoreOwnCharacter  = true,
-	PrintToConsole      = true,
-	AutoHighlight       = true,
+	PrintToConsole      = false,
+	AutoHighlight       = false,
 	NotifyEnabled       = true,
-	NotifyPerIdCooldown = 12,
+	NotifyPerIdCooldown = 14,
 	NotifyMinGap        = 1.5,
-	NotifyMaxPerSpawn   = 4,
+	NotifyMaxPerSpawn   = 3,
 	StartHidden         = true,
 	ToggleKey           = Enum.KeyCode.RightShift,
 }
@@ -45,17 +42,12 @@ local API = {
 }
 
 local THEME = {
-	Bg       = Color3.fromRGB(15, 17, 23),
-	Panel    = Color3.fromRGB(24, 27, 36),
-	PanelAlt = Color3.fromRGB(32, 36, 47),
-	Hover    = Color3.fromRGB(42, 47, 62),
-	Stroke   = Color3.fromRGB(48, 54, 70),
-	Text     = Color3.fromRGB(233, 237, 245),
-	SubText  = Color3.fromRGB(138, 147, 168),
-	Accent   = Color3.fromRGB(88, 166, 255),
-	Good     = Color3.fromRGB(0, 220, 160),
-	Danger   = Color3.fromRGB(255, 92, 92),
-	Warn     = Color3.fromRGB(255, 190, 80),
+	Bg = Color3.fromRGB(15,17,23), Panel = Color3.fromRGB(24,27,36),
+	PanelAlt = Color3.fromRGB(32,36,47), Hover = Color3.fromRGB(42,47,62),
+	Stroke = Color3.fromRGB(48,54,70), Text = Color3.fromRGB(233,237,245),
+	SubText = Color3.fromRGB(138,147,168), Accent = Color3.fromRGB(88,166,255),
+	Good = Color3.fromRGB(0,220,160), Danger = Color3.fromRGB(255,92,92),
+	Warn = Color3.fromRGB(255,190,80),
 }
 
 local FONT       = Enum.Font.Gotham
@@ -63,36 +55,22 @@ local FONT_BOLD  = Enum.Font.GothamBold
 local FONT_BLACK = Enum.Font.GothamBlack
 local FONT_MONO  = Enum.Font.Code
 
-local function create(className, props, parent)
-	local inst = Instance.new(className)
-	for k, v in pairs(props or {}) do inst[k] = v end
-	if parent then inst.Parent = parent end
-	return inst
+local function create(c, p, parent)
+	local i = Instance.new(c)
+	for k, v in pairs(p or {}) do i[k] = v end
+	if parent then i.Parent = parent end
+	return i
 end
-local function corner(r, p) return create("UICorner", { CornerRadius = UDim.new(0, r) }, p) end
+local function corner(r, p) return create("UICorner", {CornerRadius = UDim.new(0,r)}, p) end
 local function stroke(c, t, tr, p)
-	return create("UIStroke", { Color = c, Thickness = t or 1, Transparency = tr or 0,
-		ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, p)
-end
-local function addHover(btn, base, hover)
-	btn.BackgroundColor3 = base
-	btn:SetAttribute("BaseColor", base)
-	btn.MouseEnter:Connect(function()
-		TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = hover }):Play()
-	end)
-	btn.MouseLeave:Connect(function()
-		TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = btn:GetAttribute("BaseColor") }):Play()
-	end)
-end
-local function setButtonColor(btn, color)
-	btn:SetAttribute("BaseColor", color)
-	TweenService:Create(btn, TweenInfo.new(0.15), { BackgroundColor3 = color }):Play()
+	return create("UIStroke", {Color=c, Thickness=t or 1, Transparency=tr or 0,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border}, p)
 end
 
 local function resolveGuiParent()
 	if typeof(gethui) == "function" then
-		local ok, hui = pcall(gethui)
-		if ok and hui then return hui end
+		local ok, h = pcall(gethui)
+		if ok and h then return h end
 	end
 	local ok, cg = pcall(function() return game:GetService("CoreGui") end)
 	if ok and cg then
@@ -105,215 +83,167 @@ local function resolveGuiParent()
 end
 
 local screen = create("ScreenGui", {
-	Name = "AssetTrackerUI", ResetOnSpawn = false, IgnoreGuiInset = true,
-	ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 9999,
+	Name="AssetTrackerUI", ResetOnSpawn=false, IgnoreGuiInset=true,
+	ZIndexBehavior=Enum.ZIndexBehavior.Sibling, DisplayOrder=9999,
 }, resolveGuiParent())
 
--- ============================================================================
---  FLOATING TOGGLE BUBBLE (always visible)
--- ============================================================================
+--=============================================================================
+--  FLOATING TOGGLE
+--=============================================================================
 local toggleBtn = create("TextButton", {
-	Name = "ToggleBtn",
-	Position = UDim2.new(0, 24, 0, 120),
-	Size = UDim2.fromOffset(52, 52),
-	BackgroundColor3 = THEME.Panel,
-	BorderSizePixel = 0, AutoButtonColor = false,
-	Font = FONT, Text = "🔍", TextSize = 22,
-	TextColor3 = THEME.Text, ZIndex = 20,
+	Name="ToggleBtn", Position=UDim2.new(0,24,0,120),
+	Size=UDim2.fromOffset(52,52), BackgroundColor3=THEME.Panel,
+	BorderSizePixel=0, AutoButtonColor=false, Font=FONT, Text="🔍",
+	TextSize=22, TextColor3=THEME.Text, ZIndex=20,
 }, screen)
 corner(26, toggleBtn)
 local toggleStroke = stroke(THEME.Stroke, 2, 0, toggleBtn)
 
-local pulse = create("Frame", {
-	AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.fromOffset(52, 52), BackgroundTransparency = 1,
-	BorderSizePixel = 0, ZIndex = 0,
-}, toggleBtn)
-corner(26, pulse)
-local pulseStroke = stroke(THEME.Accent, 2, 0.4, pulse)
-
 toggleBtn.MouseEnter:Connect(function()
-	TweenService:Create(toggleBtn, TweenInfo.new(0.12), { BackgroundColor3 = THEME.Hover }):Play()
-	TweenService:Create(toggleStroke, TweenInfo.new(0.12), { Color = THEME.Accent }):Play()
+	toggleBtn.BackgroundColor3 = THEME.Hover
+	toggleStroke.Color = THEME.Accent
 end)
 toggleBtn.MouseLeave:Connect(function()
-	TweenService:Create(toggleBtn, TweenInfo.new(0.12), { BackgroundColor3 = THEME.Panel }):Play()
-	TweenService:Create(toggleStroke, TweenInfo.new(0.12), { Color = THEME.Stroke }):Play()
+	toggleBtn.BackgroundColor3 = THEME.Panel
+	toggleStroke.Color = THEME.Stroke
 end)
 
-task.spawn(function()
-	while pulse and pulse.Parent do
-		pulse.Size = UDim2.fromOffset(52, 52)
-		pulseStroke.Transparency = 0.5
-		TweenService:Create(pulse, TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Size = UDim2.fromOffset(84, 84),
-		}):Play()
-		TweenService:Create(pulseStroke, TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Transparency = 1,
-		}):Play()
-		task.wait(1.6)
-	end
-end)
-
--- ============================================================================
+--=============================================================================
 --  MAIN WINDOW
--- ============================================================================
-local WINDOW_W, WINDOW_H = 500, 500
+--=============================================================================
 local main = create("Frame", {
-	Name = "Window",
-	Position = UDim2.fromOffset(90, 80),
-	Size = UDim2.fromOffset(WINDOW_W, WINDOW_H),
-	BackgroundColor3 = THEME.Bg, BorderSizePixel = 0,
-	ClipsDescendants = true, Visible = false,
+	Name="Window", Position=UDim2.fromOffset(90,80),
+	Size=UDim2.fromOffset(500,500), BackgroundColor3=THEME.Bg,
+	BorderSizePixel=0, ClipsDescendants=true, Visible=false,
 }, screen)
 corner(12, main)
 stroke(THEME.Stroke, 1, 0, main)
 
--- Header
 local header = create("Frame", {
-	Size = UDim2.new(1, 0, 0, 46),
-	BackgroundColor3 = THEME.Panel, BorderSizePixel = 0,
+	Size=UDim2.new(1,0,0,46), BackgroundColor3=THEME.Panel, BorderSizePixel=0,
 }, main)
 create("Frame", {
-	Position = UDim2.new(0, 0, 1, -1), Size = UDim2.new(1, 0, 0, 1),
-	BackgroundColor3 = THEME.Accent, BackgroundTransparency = 0.55, BorderSizePixel = 0,
+	Position=UDim2.new(0,0,1,-1), Size=UDim2.new(1,0,0,1),
+	BackgroundColor3=THEME.Accent, BackgroundTransparency=0.55, BorderSizePixel=0,
 }, header)
 
 local logoBox = create("Frame", {
-	Position = UDim2.fromOffset(12, 10), Size = UDim2.fromOffset(26, 26),
-	BackgroundColor3 = THEME.Accent, BorderSizePixel = 0,
+	Position=UDim2.fromOffset(12,10), Size=UDim2.fromOffset(26,26),
+	BackgroundColor3=THEME.Accent, BorderSizePixel=0,
 }, header)
 corner(8, logoBox)
 create("TextLabel", {
-	Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-	Font = FONT, Text = "🔍", TextSize = 15,
-	TextColor3 = Color3.fromRGB(255, 255, 255),
+	Size=UDim2.fromScale(1,1), BackgroundTransparency=1, Font=FONT,
+	Text="🔍", TextSize=15, TextColor3=Color3.new(1,1,1),
 }, logoBox)
-
 create("TextLabel", {
-	Position = UDim2.fromOffset(48, 9), Size = UDim2.new(1, -160, 0, 15),
-	BackgroundTransparency = 1, Font = FONT_BLACK, Text = "ASSET ID TRACKER",
-	TextSize = 14, TextColor3 = THEME.Text,
-	TextXAlignment = Enum.TextXAlignment.Left,
+	Position=UDim2.fromOffset(48,9), Size=UDim2.new(1,-160,0,15),
+	BackgroundTransparency=1, Font=FONT_BLACK, Text="ASSET ID TRACKER",
+	TextSize=14, TextColor3=THEME.Text, TextXAlignment=Enum.TextXAlignment.Left,
 }, header)
 create("TextLabel", {
-	Position = UDim2.fromOffset(48, 25), Size = UDim2.new(1, -160, 0, 14),
-	BackgroundTransparency = 1, Font = FONT,
-	Text = "Live Workspace monitor  •  v2.3",
-	TextSize = 11, TextColor3 = THEME.SubText,
-	TextXAlignment = Enum.TextXAlignment.Left,
+	Position=UDim2.fromOffset(48,25), Size=UDim2.new(1,-160,0,14),
+	BackgroundTransparency=1, Font=FONT,
+	Text="Live Workspace monitor  •  v2.4", TextSize=11,
+	TextColor3=THEME.SubText, TextXAlignment=Enum.TextXAlignment.Left,
 }, header)
 
 local function headerButton(text, x, color)
 	local b = create("TextButton", {
-		AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, x, 0, 23),
-		Size = UDim2.fromOffset(28, 28), BackgroundColor3 = THEME.PanelAlt,
-		BorderSizePixel = 0, AutoButtonColor = false,
-		Font = FONT_BOLD, Text = text, TextSize = 14,
-		TextColor3 = color or THEME.SubText,
+		AnchorPoint=Vector2.new(1,0.5), Position=UDim2.new(1,x,0,23),
+		Size=UDim2.fromOffset(28,28), BackgroundColor3=THEME.PanelAlt,
+		BorderSizePixel=0, AutoButtonColor=false, Font=FONT_BOLD,
+		Text=text, TextSize=14, TextColor3=color or THEME.SubText,
 	}, header)
-	corner(8, b); addHover(b, THEME.PanelAlt, THEME.Hover)
+	corner(8, b)
+	b.MouseEnter:Connect(function() b.BackgroundColor3 = THEME.Hover end)
+	b.MouseLeave:Connect(function() b.BackgroundColor3 = THEME.PanelAlt end)
 	return b
 end
 local minimizeBtn = headerButton("—", -12, THEME.Text)
 local closeBtn    = headerButton("✕", -46, THEME.Danger)
 
--- Toolbar
 local toolbar = create("Frame", {
-	Position = UDim2.new(0, 0, 0, 46), Size = UDim2.new(1, 0, 0, 42),
-	BackgroundTransparency = 1,
+	Position=UDim2.new(0,0,0,46), Size=UDim2.new(1,0,0,42), BackgroundTransparency=1,
 }, main)
 
 local searchBox = create("TextBox", {
-	Position = UDim2.fromOffset(10, 9), Size = UDim2.new(1, -230, 0, 26),
-	BackgroundColor3 = THEME.Panel, BorderSizePixel = 0, Font = FONT,
-	Text = "", PlaceholderText = "🔎  Search name, ID, class, path...",
-	PlaceholderColor3 = THEME.SubText, TextColor3 = THEME.Text, TextSize = 12,
-	TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false,
+	Position=UDim2.fromOffset(10,9), Size=UDim2.new(1,-230,0,26),
+	BackgroundColor3=THEME.Panel, BorderSizePixel=0, Font=FONT,
+	PlaceholderText="🔎  Search name, ID, class, path...",
+	PlaceholderColor3=THEME.SubText, TextColor3=THEME.Text, TextSize=12,
+	TextXAlignment=Enum.TextXAlignment.Left, ClearTextOnFocus=false,
 }, toolbar)
 corner(7, searchBox)
 local searchStroke = stroke(THEME.Stroke, 1, 0.3, searchBox)
-create("UIPadding", { PaddingLeft = UDim.new(0, 9), PaddingRight = UDim.new(0, 9) }, searchBox)
+create("UIPadding", {PaddingLeft=UDim.new(0,9), PaddingRight=UDim.new(0,9)}, searchBox)
 searchBox.Focused:Connect(function()
-	TweenService:Create(searchStroke, TweenInfo.new(0.15), { Color = THEME.Accent, Transparency = 0 }):Play()
+	searchStroke.Color = THEME.Accent; searchStroke.Transparency = 0
 end)
 searchBox.FocusLost:Connect(function()
-	TweenService:Create(searchStroke, TweenInfo.new(0.15), { Color = THEME.Stroke, Transparency = 0.3 }):Play()
+	searchStroke.Color = THEME.Stroke; searchStroke.Transparency = 0.3
 end)
 
 local function toolButton(text, x, base, tc)
 	local b = create("TextButton", {
-		AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, x, 0, 22),
-		Size = UDim2.fromOffset(32, 26), BackgroundColor3 = base,
-		BorderSizePixel = 0, AutoButtonColor = false,
-		Font = FONT, Text = text, TextSize = 14,
-		TextColor3 = tc or THEME.Text,
+		AnchorPoint=Vector2.new(1,0.5), Position=UDim2.new(1,x,0,22),
+		Size=UDim2.fromOffset(32,26), BackgroundColor3=base,
+		BorderSizePixel=0, AutoButtonColor=false, Font=FONT,
+		Text=text, TextSize=14, TextColor3=tc or THEME.Text,
 	}, toolbar)
 	corner(7, b)
-	b:SetAttribute("BaseColor", base)
-	b.MouseEnter:Connect(function()
-		TweenService:Create(b, TweenInfo.new(0.12), {
-			BackgroundColor3 = (b:GetAttribute("BaseColor")):Lerp(Color3.new(1,1,1), 0.1),
-		}):Play()
-	end)
-	b.MouseLeave:Connect(function()
-		TweenService:Create(b, TweenInfo.new(0.12), { BackgroundColor3 = b:GetAttribute("BaseColor") }):Play()
-	end)
+	b.MouseEnter:Connect(function() b.BackgroundColor3 = THEME.Hover end)
+	b.MouseLeave:Connect(function() b.BackgroundColor3 = base end)
+	b:SetAttribute("RestColor", base)
 	return b
 end
 
 local clearBtn     = toolButton("🗑", -10,  THEME.Panel)
 local pauseBtn     = toolButton("⏸", -48,  THEME.Panel)
 local notifyBtn    = toolButton("🔔", -86,  THEME.Panel)
-local highlightBtn = toolButton("🎯", -124, THEME.Panel)
+local highlightBtn = toolButton("🎯", -124, THEME.PanelAlt, THEME.SubText)
 local sendBtn      = toolButton("📤", -162, THEME.PanelAlt, THEME.SubText)
 
 local statsBar = create("Frame", {
-	Position = UDim2.new(0, 0, 0, 88), Size = UDim2.new(1, 0, 0, 20),
-	BackgroundTransparency = 1,
+	Position=UDim2.new(0,0,0,88), Size=UDim2.new(1,0,0,20), BackgroundTransparency=1,
 }, main)
 local statsLabel = create("TextLabel", {
-	Position = UDim2.fromOffset(14, 0), Size = UDim2.new(1, -28, 1, 0),
-	BackgroundTransparency = 1, Font = FONT,
-	Text = "Found: 0   •   Shown: 0   •   Selected: none",
-	TextSize = 11, TextColor3 = THEME.SubText,
-	TextXAlignment = Enum.TextXAlignment.Left,
+	Position=UDim2.fromOffset(14,0), Size=UDim2.new(1,-28,1,0),
+	BackgroundTransparency=1, Font=FONT,
+	Text="Found: 0   •   Shown: 0   •   Selected: none",
+	TextSize=11, TextColor3=THEME.SubText, TextXAlignment=Enum.TextXAlignment.Left,
 }, statsBar)
 
 local logFrame = create("ScrollingFrame", {
-	Position = UDim2.fromOffset(8, 110), Size = UDim2.new(1, -16, 1, -142),
-	BackgroundTransparency = 1, BorderSizePixel = 0,
-	ScrollBarThickness = 4, ScrollBarImageColor3 = THEME.Stroke,
-	ScrollBarImageTransparency = 0.3, CanvasSize = UDim2.new(),
-	AutomaticCanvasSize = Enum.AutomaticSize.Y,
-	ScrollingDirection = Enum.ScrollingDirection.Y,
+	Position=UDim2.fromOffset(8,110), Size=UDim2.new(1,-16,1,-142),
+	BackgroundTransparency=1, BorderSizePixel=0, ScrollBarThickness=4,
+	ScrollBarImageColor3=THEME.Stroke, ScrollBarImageTransparency=0.3,
+	CanvasSize=UDim2.new(), AutomaticCanvasSize=Enum.AutomaticSize.Y,
+	ScrollingDirection=Enum.ScrollingDirection.Y,
 }, main)
-create("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, logFrame)
+create("UIListLayout", {Padding=UDim.new(0,8), SortOrder=Enum.SortOrder.LayoutOrder}, logFrame)
 create("UIPadding", {
-	PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 8),
-	PaddingRight = UDim.new(0, 4),
+	PaddingTop=UDim.new(0,2), PaddingBottom=UDim.new(0,8), PaddingRight=UDim.new(0,4),
 }, logFrame)
 
 local footer = create("Frame", {
-	Position = UDim2.new(0, 0, 1, -30), Size = UDim2.new(1, 0, 0, 30),
-	BackgroundColor3 = THEME.Panel, BorderSizePixel = 0,
+	Position=UDim2.new(0,0,1,-30), Size=UDim2.new(1,0,0,30),
+	BackgroundColor3=THEME.Panel, BorderSizePixel=0,
 }, main)
 create("Frame", {
-	Position = UDim2.new(0, 0, 0, 0), Size = UDim2.new(1, 0, 0, 1),
-	BackgroundColor3 = THEME.Stroke, BorderSizePixel = 0,
+	Position=UDim2.new(0,0,0,0), Size=UDim2.new(1,0,0,1),
+	BackgroundColor3=THEME.Stroke, BorderSizePixel=0,
 }, footer)
 local statusLabel = create("TextLabel", {
-	Position = UDim2.fromOffset(12, 0), Size = UDim2.new(0.5, 0, 1, 0),
-	BackgroundTransparency = 1, Font = FONT_BOLD, Text = "● TRACKING",
-	TextSize = 11, TextColor3 = THEME.Good,
-	TextXAlignment = Enum.TextXAlignment.Left,
+	Position=UDim2.fromOffset(12,0), Size=UDim2.new(0.5,0,1,0),
+	BackgroundTransparency=1, Font=FONT_BOLD, Text="● TRACKING",
+	TextSize=11, TextColor3=THEME.Good, TextXAlignment=Enum.TextXAlignment.Left,
 }, footer)
 create("TextLabel", {
-	AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 0),
-	Size = UDim2.new(0.6, 0, 1, 0), BackgroundTransparency = 1,
-	Font = FONT, Text = "RightShift = hide  •  Click row = select  •  📤 = send",
-	TextSize = 10, TextColor3 = THEME.SubText,
-	TextXAlignment = Enum.TextXAlignment.Right,
+	AnchorPoint=Vector2.new(1,0), Position=UDim2.new(1,-12,0,0),
+	Size=UDim2.new(0.6,0,1,0), BackgroundTransparency=1, Font=FONT,
+	Text="RightShift = hide  •  Click row = select  •  📤 = send",
+	TextSize=10, TextColor3=THEME.SubText, TextXAlignment=Enum.TextXAlignment.Right,
 }, footer)
 
 local function makeDraggable(frame, handle)
@@ -343,68 +273,49 @@ end
 makeDraggable(main, header)
 makeDraggable(toggleBtn)
 
--- ============================================================================
---  ASSET EXTRACTION
--- ============================================================================
-local function extractId(s)
-	if type(s) ~= "string" or s == "" then return nil end
-	local id = s:match("[%?&]id=(%d+)") or s:match("(%d+)")
-	if id and #id >= 3 then return id end
-	return nil
-end
-
+--=============================================================================
+--  ASSET TABLE (hoisted, avoid closures)
+--=============================================================================
 local ASSET_PROPS = {
-	MeshPart          = { "MeshId", "TextureID" },
-	SpecialMesh       = { "MeshId", "TextureId" },
-	CylinderMesh      = { "MeshId", "TextureId" },
-	BlockMesh         = { "MeshId" },
-	Decal             = { "Texture" },
-	Texture           = { "Texture" },
-	SurfaceAppearance = { "ColorMap", "NormalMap", "RoughnessMap", "MetalnessMap" },
-	ParticleEmitter   = { "Texture" },
-	Sound             = { "SoundId" },
-	Animation         = { "AnimationId" },
-	Tool              = { "TextureId" },
-	ImageLabel        = { "Image" },
-	ImageButton       = { "Image" },
-	Shirt             = { "ShirtTemplate" },
-	Pants             = { "PantsTemplate" },
-	ShirtGraphic      = { "Graphic" },
-	Sky               = { "SkyboxUp","SkyboxDn","SkyboxLf","SkyboxRt","SkyboxFt","SkyboxBk" },
-	Beam              = { "Texture" },
-	Trail             = { "Texture" },
-	Explosion         = { "Texture" },
-	Fire              = { "Texture" },
-	Sparkles          = { "Texture" },
-	CharacterMesh     = { "MeshId", "BaseTextureId", "OverlayTextureId" },
+	MeshPart={"MeshId","TextureID"}, SpecialMesh={"MeshId","TextureId"},
+	CylinderMesh={"MeshId","TextureId"}, BlockMesh={"MeshId"},
+	Decal={"Texture"}, Texture={"Texture"},
+	SurfaceAppearance={"ColorMap","NormalMap","RoughnessMap","MetalnessMap"},
+	ParticleEmitter={"Texture"}, Sound={"SoundId"}, Animation={"AnimationId"},
+	Tool={"TextureId"}, ImageLabel={"Image"}, ImageButton={"Image"},
+	Shirt={"ShirtTemplate"}, Pants={"PantsTemplate"}, ShirtGraphic={"Graphic"},
+	Sky={"SkyboxUp","SkyboxDn","SkyboxLf","SkyboxRt","SkyboxFt","SkyboxBk"},
+	Beam={"Texture"}, Trail={"Texture"}, Explosion={"Texture"},
+	Fire={"Texture"}, Sparkles={"Texture"},
+	CharacterMesh={"MeshId","BaseTextureId","OverlayTextureId"},
 }
 
 local PROP_INFO = {
-	MeshId = {"Mesh","🧊"}, TextureId = {"Texture","🖼️"}, TextureID = {"Texture","🖼️"},
-	Texture = {"Texture","🖼️"}, SoundId = {"Sound","🔊"}, AnimationId = {"Animation","🎞️"},
-	Image = {"Image","🖼️"}, ShirtTemplate = {"Shirt","👕"}, PantsTemplate = {"Pants","👖"},
-	Graphic = {"Graphic","🎨"}, ColorMap = {"ColorMap","🎨"}, NormalMap = {"NormalMap","🗺️"},
-	RoughnessMap = {"Roughness","🗺️"}, MetalnessMap = {"Metalness","🗺️"},
-	SkyboxUp = {"Skybox","🌌"}, SkyboxDn = {"Skybox","🌌"}, SkyboxLf = {"Skybox","🌌"},
-	SkyboxRt = {"Skybox","🌌"}, SkyboxFt = {"Skybox","🌌"}, SkyboxBk = {"Skybox","🌌"},
-	BaseTextureId = {"Texture","🖼️"}, OverlayTextureId = {"Texture","🖼️"},
+	MeshId={"Mesh","🧊"}, TextureId={"Texture","🖼️"}, TextureID={"Texture","🖼️"},
+	Texture={"Texture","🖼️"}, SoundId={"Sound","🔊"}, AnimationId={"Animation","🎞️"},
+	Image={"Image","🖼️"}, ShirtTemplate={"Shirt","👕"}, PantsTemplate={"Pants","👖"},
+	Graphic={"Graphic","🎨"}, ColorMap={"ColorMap","🎨"}, NormalMap={"NormalMap","🗺️"},
+	RoughnessMap={"Roughness","🗺️"}, MetalnessMap={"Metalness","🗺️"},
+	SkyboxUp={"Skybox","🌌"}, SkyboxDn={"Skybox","🌌"}, SkyboxLf={"Skybox","🌌"},
+	SkyboxRt={"Skybox","🌌"}, SkyboxFt={"Skybox","🌌"}, SkyboxBk={"Skybox","🌌"},
+	BaseTextureId={"Texture","🖼️"}, OverlayTextureId={"Texture","🖼️"},
 }
 local CLASS_INFO = {
-	ParticleEmitter = {"Particle","✨"}, Beam = {"Beam","💫"}, Trail = {"Trail","💫"},
-	Fire = {"Fire","🔥"}, Explosion = {"Explosion","💥"}, Decal = {"Decal","🏷️"},
-	Sky = {"Skybox","🌌"}, Sound = {"Sound","🔊"}, Animation = {"Animation","🎞️"},
+	ParticleEmitter={"Particle","✨"}, Beam={"Beam","💫"}, Trail={"Trail","💫"},
+	Fire={"Fire","🔥"}, Explosion={"Explosion","💥"}, Decal={"Decal","🏷️"},
+	Sky={"Skybox","🌌"}, Sound={"Sound","🔊"}, Animation={"Animation","🎞️"},
 }
 local TYPE_COLORS = {
-	Mesh = Color3.fromRGB(110,190,255), Texture = Color3.fromRGB(255,170,90),
-	Decal = Color3.fromRGB(255,140,200), Sound = Color3.fromRGB(180,140,255),
-	Animation = Color3.fromRGB(120,255,190), Particle = Color3.fromRGB(255,230,120),
-	Image = Color3.fromRGB(255,170,90), Shirt = Color3.fromRGB(140,220,140),
-	Pants = Color3.fromRGB(140,180,240), Graphic = Color3.fromRGB(255,200,120),
-	Skybox = Color3.fromRGB(150,180,255), Beam = Color3.fromRGB(150,220,255),
-	Trail = Color3.fromRGB(150,220,255), Fire = Color3.fromRGB(255,130,80),
-	Explosion = Color3.fromRGB(255,110,90), ColorMap = Color3.fromRGB(255,160,120),
-	NormalMap = Color3.fromRGB(160,200,255), Roughness = Color3.fromRGB(190,190,190),
-	Metalness = Color3.fromRGB(200,200,220),
+	Mesh=Color3.fromRGB(110,190,255), Texture=Color3.fromRGB(255,170,90),
+	Decal=Color3.fromRGB(255,140,200), Sound=Color3.fromRGB(180,140,255),
+	Animation=Color3.fromRGB(120,255,190), Particle=Color3.fromRGB(255,230,120),
+	Image=Color3.fromRGB(255,170,90), Shirt=Color3.fromRGB(140,220,140),
+	Pants=Color3.fromRGB(140,180,240), Graphic=Color3.fromRGB(255,200,120),
+	Skybox=Color3.fromRGB(150,180,255), Beam=Color3.fromRGB(150,220,255),
+	Trail=Color3.fromRGB(150,220,255), Fire=Color3.fromRGB(255,130,80),
+	Explosion=Color3.fromRGB(255,110,90), ColorMap=Color3.fromRGB(255,160,120),
+	NormalMap=Color3.fromRGB(160,200,255), Roughness=Color3.fromRGB(190,190,190),
+	Metalness=Color3.fromRGB(200,200,220),
 }
 local function describe(className, prop)
 	local info = CLASS_INFO[className] or PROP_INFO[prop]
@@ -412,25 +323,47 @@ local function describe(className, prop)
 	return prop, "📦", THEME.Accent
 end
 
+local function extractId(s)
+	if type(s) ~= "string" or s == "" then return nil end
+	local id = s:match("[%?&]id=(%d+)") or s:match("(%d+)")
+	if id and #id >= 3 then return id end
+	return nil
+end
+
+--=============================================================================
+--  HIGHLIGHT POOL (reuse — Highlights are costly)
+--=============================================================================
+local hlPool, hlIdx = {}, 0
+local function getHighlight()
+	if #hlPool < 4 then
+		local h = Instance.new("Highlight")
+		h.FillColor = CONFIG.HighlightColor
+		h.FillTransparency = 0.7
+		h.OutlineColor = Color3.new(1,1,1)
+		h.OutlineTransparency = 0.2
+		h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		h.Name = "AssetTrackerHighlight"
+		table.insert(hlPool, h)
+		return h
+	end
+	hlIdx = hlIdx % #hlPool + 1
+	return hlPool[hlIdx]
+end
+
 local function highlightInstance(inst, dur)
 	if not inst or not inst.Parent then return end
-	if inst:FindFirstChild("AssetTrackerHighlight") then
-		inst.AssetTrackerHighlight:Destroy()
-	end
-	local h = create("Highlight", {
-		Name = "AssetTrackerHighlight",
-		FillColor = CONFIG.HighlightColor, FillTransparency = 0.65,
-		OutlineColor = Color3.fromRGB(255,255,255), OutlineTransparency = 0.15,
-		DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
-	}, inst)
-	Debris:AddItem(h, dur or CONFIG.HighlightDuration)
+	local h = getHighlight()
+	h.Parent = inst
+	task.delay(dur or CONFIG.HighlightDuration, function()
+		if h.Parent == inst then h.Parent = nil end
+	end)
 end
 
 local function notify(title, text, dur)
 	if not CONFIG.NotifyEnabled then return end
 	pcall(function()
 		StarterGui:SetCore("SendNotification", {
-			Title = title, Text = text, Duration = dur or 4,
+			Title=title, Text=text, Duration=dur or 4,
 		})
 	end)
 end
@@ -440,160 +373,157 @@ local function copyText(text)
 	if typeof(setclipboard) == "function" then
 		if pcall(setclipboard, text) then return true end
 	end
-	local tb = create("TextBox", {
-		Position = UDim2.fromOffset(-200,-200), Size = UDim2.fromOffset(2,2),
-		BackgroundTransparency = 1, TextTransparency = 1,
-		Text = text, TextSize = 1, ClearTextOnFocus = false,
-	}, screen)
-	tb:CaptureFocus()
-	tb.SelectionStart = 1
-	tb.CursorPosition = #tb.Text + 1
-	task.delay(0.6, function()
-		pcall(function() tb:ReleaseFocus() end); tb:Destroy()
-	end)
-	return true
 end
 
 local function postToApi(title, message)
-	local body = HttpService:JSONEncode({ title = title, message = message, channel = API.Channel })
+	local body = HttpService:JSONEncode({title=title, message=message, channel=API.Channel})
 	local headers = {
-		["Authorization"] = "Bearer " .. API.Key,
-		["apikey"]        = API.Key,
-		["Content-Type"]  = "application/json",
+		["Authorization"]="Bearer "..API.Key,
+		["apikey"]=API.Key,
+		["Content-Type"]="application/json",
 	}
 	if typeof(request) == "function" then
 		local ok, resp = pcall(request, {
-			Url = API.Url, Method = "POST", Headers = headers, Body = body,
+			Url=API.Url, Method="POST", Headers=headers, Body=body,
 		})
-		if ok and resp then return resp.StatusCode == 200 or resp.Success == true, resp end
+		if ok and resp then return resp.StatusCode==200 or resp.Success==true, resp end
 		return false, resp
 	end
 	local ok, resp = pcall(function()
 		return HttpService:RequestAsync({
-			Url = API.Url, Method = "POST", Headers = headers, Body = body,
+			Url=API.Url, Method="POST", Headers=headers, Body=body,
 		})
 	end)
-	if ok and resp then return resp.Success == true or resp.StatusCode == 200, resp end
+	if ok and resp then return resp.Success==true or resp.StatusCode==200, resp end
 	return false, resp
 end
 
--- ============================================================================
+--=============================================================================
 --  FOLDERS
--- ============================================================================
-local folders = {}
-local folderOrder = 0
+--=============================================================================
+local folders, folderOrder = {}, 0
 
 local function getOrCreateFolder(className)
-	if folders[className] then return folders[className] end
+	local f = folders[className]
+	if f then return f end
 	folderOrder += 1
 
 	local container = create("Frame", {
-		Name = className, Size = UDim2.new(1, 0, 0, 0),
-		AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
-		LayoutOrder = folderOrder,
+		Name=className, Size=UDim2.new(1,0,0,0),
+		AutomaticSize=Enum.AutomaticSize.Y, BackgroundTransparency=1,
+		LayoutOrder=folderOrder,
 	}, logFrame)
-	create("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }, container)
+	create("UIListLayout", {Padding=UDim.new(0,4), SortOrder=Enum.SortOrder.LayoutOrder}, container)
 
 	local hdr = create("TextButton", {
-		Name = "FolderHeader", Size = UDim2.new(1, 0, 0, 30),
-		BackgroundColor3 = THEME.PanelAlt, BorderSizePixel = 0,
-		AutoButtonColor = false, Text = "", LayoutOrder = 0,
+		Name="FolderHeader", Size=UDim2.new(1,0,0,30),
+		BackgroundColor3=THEME.PanelAlt, BorderSizePixel=0,
+		AutoButtonColor=false, Text="", LayoutOrder=0,
 	}, container)
-	corner(8, hdr); stroke(THEME.Stroke, 1, 0.35, hdr)
+	corner(8, hdr)
+	stroke(THEME.Stroke, 1, 0.35, hdr)
 
 	local arrow = create("TextLabel", {
-		Position = UDim2.fromOffset(10, 0), Size = UDim2.fromOffset(14, 30),
-		BackgroundTransparency = 1, Font = FONT_BOLD, Text = "▼",
-		TextSize = 11, TextColor3 = THEME.SubText,
-		TextXAlignment = Enum.TextXAlignment.Left,
+		Position=UDim2.fromOffset(10,0), Size=UDim2.fromOffset(14,30),
+		BackgroundTransparency=1, Font=FONT_BOLD, Text="▼",
+		TextSize=11, TextColor3=THEME.SubText,
+		TextXAlignment=Enum.TextXAlignment.Left,
 	}, hdr)
 	local dot = create("Frame", {
-		Position = UDim2.fromOffset(28, 11), Size = UDim2.fromOffset(8, 8),
-		BackgroundColor3 = THEME.Accent, BorderSizePixel = 0,
+		Position=UDim2.fromOffset(28,11), Size=UDim2.fromOffset(8,8),
+		BackgroundColor3=THEME.Accent, BorderSizePixel=0,
 	}, hdr)
 	corner(4, dot)
 	local nameLabel = create("TextLabel", {
-		Position = UDim2.fromOffset(42, 0), Size = UDim2.new(1, -100, 1, 0),
-		BackgroundTransparency = 1, Font = FONT_BOLD, Text = className,
-		TextSize = 12, TextColor3 = THEME.Text,
-		TextXAlignment = Enum.TextXAlignment.Left,
+		Position=UDim2.fromOffset(42,0), Size=UDim2.new(1,-100,1,0),
+		BackgroundTransparency=1, Font=FONT_BOLD, Text=className,
+		TextSize=12, TextColor3=THEME.Text,
+		TextXAlignment=Enum.TextXAlignment.Left,
 	}, hdr)
 	local countLabel = create("TextLabel", {
-		AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -10, 0, 0),
-		Size = UDim2.fromOffset(60, 30), BackgroundTransparency = 1,
-		Font = FONT_MONO, Text = "0", TextSize = 11,
-		TextColor3 = THEME.SubText,
-		TextXAlignment = Enum.TextXAlignment.Right,
+		AnchorPoint=Vector2.new(1,0), Position=UDim2.new(1,-10,0,0),
+		Size=UDim2.fromOffset(60,30), BackgroundTransparency=1,
+		Font=FONT_MONO, Text="0", TextSize=11,
+		TextColor3=THEME.SubText, TextXAlignment=Enum.TextXAlignment.Right,
 	}, hdr)
 
 	local body = create("Frame", {
-		Name = "FolderBody", Size = UDim2.new(1, 0, 0, 0),
-		AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
-		LayoutOrder = 1,
+		Name="FolderBody", Size=UDim2.new(1,0,0,0),
+		AutomaticSize=Enum.AutomaticSize.Y, BackgroundTransparency=1,
+		LayoutOrder=1,
 	}, container)
-	create("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }, body)
+	create("UIListLayout", {Padding=UDim.new(0,4), SortOrder=Enum.SortOrder.LayoutOrder}, body)
 
-	local f = {
-		container = container, header = hdr, body = body, arrow = arrow, dot = dot,
-		nameLabel = nameLabel, countLabel = countLabel,
-		entries = {}, count = 0, collapsed = false,
+	f = {
+		container=container, header=hdr, body=body, arrow=arrow, dot=dot,
+		nameLabel=nameLabel, countLabel=countLabel,
+		entries={}, count=0, collapsed=false,
 	}
 	hdr.Activated:Connect(function()
 		f.collapsed = not f.collapsed
 		body.Visible = not f.collapsed
 		arrow.Text = f.collapsed and "▶" or "▼"
 	end)
-	hdr.MouseEnter:Connect(function()
-		TweenService:Create(hdr, TweenInfo.new(0.1), { BackgroundColor3 = THEME.Hover }):Play()
-	end)
-	hdr.MouseLeave:Connect(function()
-		TweenService:Create(hdr, TweenInfo.new(0.1), { BackgroundColor3 = THEME.PanelAlt }):Play()
-	end)
+	hdr.MouseEnter:Connect(function() hdr.BackgroundColor3 = THEME.Hover end)
+	hdr.MouseLeave:Connect(function() hdr.BackgroundColor3 = THEME.PanelAlt end)
 
 	folders[className] = f
 	return f
 end
 
--- ============================================================================
---  SELECTION
--- ============================================================================
+--=============================================================================
+--  SELECTION + ENTRY MANAGEMENT
+--=============================================================================
 local selectedRecord = nil
-local function updateSendButton()
-	if selectedRecord then
-		setButtonColor(sendBtn, THEME.Accent)
-		sendBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	else
-		setButtonColor(sendBtn, THEME.PanelAlt)
-		sendBtn.TextColor3 = THEME.SubText
-	end
-	sendBtn.Text = "📤"
-end
-local function selectEntry(record)
-	if selectedRecord and selectedRecord.setSelected then selectedRecord.setSelected(false) end
-	selectedRecord = record
-	if record and record.setSelected then record.setSelected(true) end
-	updateSendButton()
-	updateStats()
-end
-
 local allEntries = {}
 local totalFound = 0
 local entryCounter = 0
 
+local function updateSendButton()
+	if selectedRecord then
+		sendBtn.BackgroundColor3 = THEME.Accent
+		sendBtn:SetAttribute("RestColor", THEME.Accent)
+		sendBtn.TextColor3 = Color3.new(1,1,1)
+	else
+		sendBtn.BackgroundColor3 = THEME.PanelAlt
+		sendBtn:SetAttribute("RestColor", THEME.PanelAlt)
+		sendBtn.TextColor3 = THEME.SubText
+	end
+	sendBtn.Text = "📤"
+end
+
 function updateStats()
 	local visible = 0
-	for _, e in ipairs(allEntries) do
+	for i = 1, #allEntries do
+		local e = allEntries[i]
 		if e.frame and e.frame.Visible then visible += 1 end
 	end
 	local sel = selectedRecord and ("  •  Selected: " .. selectedRecord.data.name) or "  •  Selected: none"
 	statsLabel.Text = string.format("Found: %d   •   Shown: %d%s", totalFound, visible, sel)
 end
 
+local function selectEntry(record)
+	if selectedRecord then
+		local prev = selectedRecord
+		prev.frame.BackgroundColor3 = THEME.Panel
+		prev.frame.UIStroke.Color = THEME.Stroke
+		prev.frame.UIStroke.Transparency = 0.45
+	end
+	selectedRecord = record
+	record.frame.BackgroundColor3 = THEME.Hover
+	record.frame.UIStroke.Color = THEME.Accent
+	record.frame.UIStroke.Transparency = 0
+	updateSendButton()
+	updateStats()
+end
+
 local function removeEntry(record)
 	local folder = record.folder
 	if folder then
 		for i = #folder.entries, 1, -1 do
-			if folder.entries[i] == record then table.remove(folder.entries, i); break end
+			if folder.entries[i] == record then
+				table.remove(folder.entries, i); break
+			end
 		end
 		folder.count -= 1
 		folder.countLabel.Text = tostring(folder.count)
@@ -611,76 +541,66 @@ local function addEntry(data)
 	local folder = getOrCreateFolder(data.className)
 
 	local row = create("TextButton", {
-		Name = "Entry", Size = UDim2.new(1, 0, 0, 58),
-		BackgroundColor3 = THEME.Panel, BorderSizePixel = 0,
-		AutoButtonColor = false, Text = "", LayoutOrder = entryCounter,
+		Name="Entry", Size=UDim2.new(1,0,0,58),
+		BackgroundColor3=THEME.Panel, BorderSizePixel=0,
+		AutoButtonColor=false, Text="", LayoutOrder=entryCounter,
 	}, folder.body)
 	corner(8, row)
 	local rowStroke = stroke(THEME.Stroke, 1, 0.45, row)
 
 	local iconWrap = create("Frame", {
-		Position = UDim2.fromOffset(8, 8), Size = UDim2.fromOffset(30, 30),
-		BackgroundColor3 = data.color, BackgroundTransparency = 0.82,
-		BorderSizePixel = 0,
+		Position=UDim2.fromOffset(8,8), Size=UDim2.fromOffset(30,30),
+		BackgroundColor3=data.color, BackgroundTransparency=0.82, BorderSizePixel=0,
 	}, row)
 	corner(8, iconWrap)
 	create("TextLabel", {
-		Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-		Font = FONT, Text = data.icon, TextSize = 16,
-		TextColor3 = Color3.fromRGB(255, 255, 255),
+		Size=UDim2.fromScale(1,1), BackgroundTransparency=1, Font=FONT,
+		Text=data.icon, TextSize=16, TextColor3=Color3.new(1,1,1),
 	}, iconWrap)
 
 	create("TextLabel", {
-		Position = UDim2.fromOffset(46, 5), Size = UDim2.new(1, -160, 0, 15),
-		BackgroundTransparency = 1, Font = FONT_BOLD, TextSize = 13,
-		TextColor3 = THEME.Text, TextXAlignment = Enum.TextXAlignment.Left,
-		TextTruncate = Enum.TextTruncate.AtEnd, Text = data.name,
+		Position=UDim2.fromOffset(46,5), Size=UDim2.new(1,-160,0,15),
+		BackgroundTransparency=1, Font=FONT_BOLD, TextSize=13,
+		TextColor3=THEME.Text, TextXAlignment=Enum.TextXAlignment.Left,
+		TextTruncate=Enum.TextTruncate.AtEnd, Text=data.name,
 	}, row)
 	create("TextLabel", {
-		Position = UDim2.fromOffset(46, 21), Size = UDim2.new(1, -160, 0, 13),
-		BackgroundTransparency = 1, Font = FONT, TextSize = 11,
-		TextColor3 = data.color, TextXAlignment = Enum.TextXAlignment.Left,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-		Text = string.format("%s  •  %s.%s", data.label, data.className, data.prop),
+		Position=UDim2.fromOffset(46,21), Size=UDim2.new(1,-160,0,13),
+		BackgroundTransparency=1, Font=FONT, TextSize=11,
+		TextColor3=data.color, TextXAlignment=Enum.TextXAlignment.Left,
+		TextTruncate=Enum.TextTruncate.AtEnd,
+		Text=string.format("%s  •  %s.%s", data.label, data.className, data.prop),
 	}, row)
 	create("TextLabel", {
-		Position = UDim2.fromOffset(46, 35), Size = UDim2.new(1, -160, 0, 13),
-		BackgroundTransparency = 1, Font = FONT_MONO, TextSize = 10,
-		TextColor3 = THEME.SubText, TextXAlignment = Enum.TextXAlignment.Left,
-		TextTruncate = Enum.TextTruncate.AtEnd, Text = data.path,
+		Position=UDim2.fromOffset(46,35), Size=UDim2.new(1,-160,0,13),
+		BackgroundTransparency=1, Font=FONT_MONO, TextSize=10,
+		TextColor3=THEME.SubText, TextXAlignment=Enum.TextXAlignment.Left,
+		TextTruncate=Enum.TextTruncate.AtEnd, Text=data.path,
 	}, row)
 
 	local idBtn = create("TextButton", {
-		Name = "CopyId", AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -8, 0, 8), Size = UDim2.fromOffset(98, 22),
-		BackgroundColor3 = THEME.PanelAlt, BorderSizePixel = 0,
-		AutoButtonColor = false, Font = FONT_MONO, TextSize = 11,
-		TextColor3 = data.color, Text = data.id, ZIndex = 3,
+		Name="CopyId", AnchorPoint=Vector2.new(1,0),
+		Position=UDim2.new(1,-8,0,8), Size=UDim2.fromOffset(98,22),
+		BackgroundColor3=THEME.PanelAlt, BorderSizePixel=0,
+		AutoButtonColor=false, Font=FONT_MONO, TextSize=11,
+		TextColor3=data.color, Text=data.id, ZIndex=3,
 	}, row)
-	corner(6, idBtn); addHover(idBtn, THEME.PanelAlt, THEME.Hover)
+	corner(6, idBtn)
+	idBtn.MouseEnter:Connect(function() idBtn.BackgroundColor3 = THEME.Hover end)
+	idBtn.MouseLeave:Connect(function() idBtn.BackgroundColor3 = THEME.PanelAlt end)
 
 	create("TextLabel", {
-		AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 34),
-		Size = UDim2.fromOffset(98, 12), BackgroundTransparency = 1,
-		Font = FONT, TextSize = 10, TextColor3 = THEME.SubText,
-		TextXAlignment = Enum.TextXAlignment.Right, Text = data.time,
+		AnchorPoint=Vector2.new(1,0), Position=UDim2.new(1,-8,0,34),
+		Size=UDim2.fromOffset(98,12), BackgroundTransparency=1, Font=FONT,
+		TextSize=10, TextColor3=THEME.SubText,
+		TextXAlignment=Enum.TextXAlignment.Right, Text=data.time,
 	}, row)
 
 	local record = {
-		frame = row, data = data, folder = folder,
-		search = string.lower(table.concat({
-			data.name, data.id, data.className, data.prop, data.path, data.label,
-		}, " ")),
+		frame=row, data=data, folder=folder,
+		search=string.lower(data.name.." "..data.id.." "..data.className.." "..
+			data.prop.." "..data.path.." "..data.label),
 	}
-	record.setSelected = function(sel)
-		if sel then
-			TweenService:Create(row, TweenInfo.new(0.1), { BackgroundColor3 = THEME.Hover }):Play()
-			TweenService:Create(rowStroke, TweenInfo.new(0.1), { Color = THEME.Accent, Transparency = 0 }):Play()
-		else
-			TweenService:Create(row, TweenInfo.new(0.1), { BackgroundColor3 = THEME.Panel }):Play()
-			TweenService:Create(rowStroke, TweenInfo.new(0.1), { Color = THEME.Stroke, Transparency = 0.45 }):Play()
-		end
-	end
 
 	table.insert(folder.entries, record)
 	table.insert(allEntries, record)
@@ -688,37 +608,26 @@ local function addEntry(data)
 	folder.countLabel.Text = tostring(folder.count)
 	folder.dot.BackgroundColor3 = data.color
 
-	-- ==========================================================
-	--  PRECISE CLICK — hover tracking (reliable)
-	-- ==========================================================
 	local hoveringIdBtn = false
 	idBtn.MouseEnter:Connect(function() hoveringIdBtn = true end)
 	idBtn.MouseLeave:Connect(function() hoveringIdBtn = false end)
 
 	row.Activated:Connect(function()
-		-- If the mouse was hovering the copy button, don't select.
 		if hoveringIdBtn then return end
 		selectEntry(record)
 	end)
-
 	row.MouseEnter:Connect(function()
-		if selectedRecord ~= record then
-			TweenService:Create(row, TweenInfo.new(0.12), { BackgroundColor3 = THEME.PanelAlt }):Play()
-			TweenService:Create(rowStroke, TweenInfo.new(0.12), { Color = data.color, Transparency = 0.5 }):Play()
-		end
+		if selectedRecord ~= record then row.BackgroundColor3 = THEME.PanelAlt end
 	end)
 	row.MouseLeave:Connect(function()
-		if selectedRecord ~= record then
-			TweenService:Create(row, TweenInfo.new(0.12), { BackgroundColor3 = THEME.Panel }):Play()
-			TweenService:Create(rowStroke, TweenInfo.new(0.12), { Color = THEME.Stroke, Transparency = 0.45 }):Play()
-		end
+		if selectedRecord ~= record then row.BackgroundColor3 = THEME.Panel end
 	end)
 
 	idBtn.Activated:Connect(function()
 		copyText(data.id)
 		idBtn.Text = "✓ Copied"
 		task.delay(0.9, function()
-			if idBtn and idBtn.Parent then idBtn.Text = data.id end
+			if idBtn.Parent then idBtn.Text = data.id end
 		end)
 	end)
 
@@ -727,16 +636,18 @@ local function addEntry(data)
 		if old == selectedRecord then selectedRecord = nil; updateSendButton() end
 		removeEntry(old)
 	end
-
-	updateStats()
 end
 
--- Filter
+--=============================================================================
+--  FILTER
+--=============================================================================
 local filterText = ""
 local function applyFilter()
 	for _, folder in pairs(folders) do
 		local anyVisible = false
-		for _, e in ipairs(folder.entries) do
+		local entries = folder.entries
+		for i = 1, #entries do
+			local e = entries[i]
 			local match = filterText == "" or e.search:find(filterText, 1, true) ~= nil
 			e.frame.Visible = match
 			if match then anyVisible = true end
@@ -750,47 +661,65 @@ searchBox:GetPropertyChangedSignal("Text"):Connect(function()
 	applyFilter()
 end)
 
--- Scanner
-local scanned = setmetatable({}, { __mode = "k" })
+--=============================================================================
+--  BATCHED SCANNER  (the actual perf fix)
+--=============================================================================
+local seen = setmetatable({}, {__mode="k"})
 local paused = false
+local queue = {}
+
+-- Class pre-filter — only queue objects that either hold assets or are containers
+local CONTAINER_CLASSES = {Model=true, Folder=true, Tool=true, Accessory=true}
+
+Workspace.DescendantAdded:Connect(function(d)
+	if paused or seen[d] then return end
+
+	-- Skip if parent is already queued/seen (it'll be scanned with the parent)
+	local p = d.Parent
+	if p and seen[p] then return end
+
+	local cls = d.ClassName
+	if not (ASSET_PROPS[cls] or CONTAINER_CLASSES[cls] or d:IsA("BasePart")) then
+		return
+	end
+
+	if CONFIG.IgnoreOwnCharacter then
+		local char = LP.Character
+		if char and d:IsDescendantOf(char) then return end
+	end
+
+	seen[d] = true
+	queue[#queue + 1] = d
+	if #queue > 500 then
+		-- emergency drop — never let the queue blow up
+		for i = 1, 200 do queue[i] = nil end
+	end
+end)
 
 local function collectFrom(inst, out)
-	if scanned[inst] then return end
-	scanned[inst] = true
 	local props = ASSET_PROPS[inst.ClassName]
 	if not props then return end
-	for _, prop in ipairs(props) do
-		local ok, value = pcall(function() return inst[prop] end)
-		if ok and type(value) == "string" and value ~= "" then
-			local id = extractId(value)
-			if id then table.insert(out, { instance = inst, prop = prop, id = id }) end
+	-- Single pcall wraps the whole loop (fast path)
+	local ok = pcall(function()
+		for i = 1, #props do
+			local prop = props[i]
+			local value = inst[prop]
+			if type(value) == "string" and value ~= "" then
+				local id = extractId(value)
+				if id then
+					out[#out + 1] = {instance=inst, prop=prop, id=id}
+				end
+			end
 		end
-	end
+	end)
 end
 
-local function scanTree(root)
-	local out = {}
-	collectFrom(root, out)
-	local ok, desc = pcall(function() return root:GetDescendants() end)
-	if ok then
-		for _, d in ipairs(desc) do collectFrom(d, out) end
-	end
-	return out
-end
-
-local recentNotify = {}
-local lastNotifyTime = 0
+local recentNotify, lastNotifyTime = {}, 0
 local function canNotifyId(id)
 	local now = os.clock()
 	local last = recentNotify[id]
 	if last and (now - last) < CONFIG.NotifyPerIdCooldown then return false end
 	recentNotify[id] = now
-	if #recentNotify > 500 then
-		local cutoff = now - CONFIG.NotifyPerIdCooldown
-		for k, v in pairs(recentNotify) do
-			if v < cutoff then recentNotify[k] = nil end
-		end
-	end
 	return true
 end
 local function canNotifyNow()
@@ -802,25 +731,34 @@ end
 
 local function processFound(foundList)
 	local byInst, order = {}, {}
-	for _, info in ipairs(foundList) do
+	for i = 1, #foundList do
+		local info = foundList[i]
 		local inst = info.instance
-		if not byInst[inst] then byInst[inst] = {}; table.insert(order, inst) end
-		table.insert(byInst[inst], info)
+		local b = byInst[inst]
+		if b then
+			b[#b + 1] = info
+		else
+			byInst[inst] = {info}
+			order[#order + 1] = inst
+		end
 	end
-	for _, inst in ipairs(order) do
+
+	for oi = 1, #order do
+		local inst = order[oi]
 		local infos = byInst[inst]
-		for _, info in ipairs(infos) do
+		for ii = 1, #infos do
+			local info = infos[ii]
 			local label, icon, color = describe(inst.ClassName, info.prop)
 			local d = {
-				id = info.id, prop = info.prop, className = inst.ClassName,
-				name = inst.Name, path = inst:GetFullName(),
-				label = label, icon = icon, color = color,
-				instance = inst, time = os.date("%H:%M:%S"),
+				id=info.id, prop=info.prop, className=inst.ClassName,
+				name=inst.Name, path=inst:GetFullName(),
+				label=label, icon=icon, color=color,
+				time=os.date("%H:%M:%S"),
 			}
 			addEntry(d)
 			if CONFIG.PrintToConsole then
-				print(string.format("[AssetTracker] %s | %s.%s = %s | %s",
-					d.name, d.className, d.prop, d.id, d.path))
+				print(string.format("[Tracker] %s | %s.%s = %s",
+					d.name, d.className, d.prop, d.id))
 			end
 		end
 
@@ -829,12 +767,10 @@ local function processFound(foundList)
 			if canNotifyId(first.id) and canNotifyNow() then
 				local label, icon = describe(inst.ClassName, first.prop)
 				local lines = {}
-				for i, info in ipairs(infos) do
-					if i > CONFIG.NotifyMaxPerSpawn then break end
-					table.insert(lines, info.id)
-				end
-				local extra = #infos - #lines
-				local text = inst.Name .. (extra > 0 and ("  (+" .. extra .. " more)") or "")
+				local lim = math.min(#infos, CONFIG.NotifyMaxPerSpawn)
+				for i = 1, lim do lines[#lines + 1] = infos[i].id end
+				local extra = #infos - lim
+				local text = inst.Name .. (extra > 0 and ("  (+"..extra.." more)") or "")
 				text = text .. "\n" .. table.concat(lines, ", ")
 				notify(icon .. " " .. label, text, 4)
 			end
@@ -846,21 +782,46 @@ local function processFound(foundList)
 	end
 end
 
-Workspace.DescendantAdded:Connect(function(descendant)
-	if paused then return end
-	if scanned[descendant] then return end
-	if CONFIG.IgnoreOwnCharacter then
-		local char = LP.Character
-		if char and descendant:IsDescendantOf(char) then return end
+-- Background batch processor — this is what makes it fast
+task.spawn(function()
+	while true do
+		task.wait(CONFIG.ScanBatch)
+		if paused or #queue == 0 then continue end
+
+		local budget = CONFIG.ScanBudgetPerTick
+		local processed = 0
+		local found = {}
+
+		while #queue > 0 and processed < budget do
+			local inst = table.remove(queue, 1)
+			processed += 1
+			if inst and inst.Parent then
+				-- scan self
+				collectFrom(inst, found)
+				-- scan descendants (mark them seen so they don't get re-queued)
+				local ok, desc = pcall(function() return inst:GetDescendants() end)
+				if ok and desc then
+					for i = 1, #desc do
+						local c = desc[i]
+						if not seen[c] then
+							seen[c] = true
+							collectFrom(c, found)
+						end
+					end
+				end
+			end
+		end
+
+		if #found > 0 then
+			processFound(found)
+			updateStats()
+		end
 	end
-	task.delay(CONFIG.ScanDelay, function()
-		if paused or not descendant or not descendant.Parent then return end
-		local found = scanTree(descendant)
-		if #found > 0 then processFound(found) end
-	end)
 end)
 
--- Show / Hide
+--=============================================================================
+--  SHOW / HIDE
+--=============================================================================
 local uiVisible = false
 local function setUIVisible(state)
 	uiVisible = state
@@ -877,25 +838,27 @@ end
 toggleBtn.Activated:Connect(function() setUIVisible(true) end)
 minimizeBtn.Activated:Connect(function() setUIVisible(false) end)
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	if input.KeyCode == CONFIG.ToggleKey then
-		setUIVisible(not uiVisible)
-	end
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp then return end
+	if input.KeyCode == CONFIG.ToggleKey then setUIVisible(not uiVisible) end
 end)
 
--- Toolbar actions
+--=============================================================================
+--  TOOLBAR ACTIONS
+--=============================================================================
 pauseBtn.Activated:Connect(function()
 	paused = not paused
 	if paused then
 		pauseBtn.Text = "▶"
-		setButtonColor(pauseBtn, THEME.Warn)
-		pauseBtn.TextColor3 = Color3.fromRGB(30, 25, 10)
+		pauseBtn.BackgroundColor3 = THEME.Warn
+		pauseBtn:SetAttribute("RestColor", THEME.Warn)
+		pauseBtn.TextColor3 = Color3.fromRGB(30,25,10)
 		statusLabel.Text = "❚❚ PAUSED"
 		statusLabel.TextColor3 = THEME.Warn
 	else
 		pauseBtn.Text = "⏸"
-		setButtonColor(pauseBtn, THEME.Panel)
+		pauseBtn.BackgroundColor3 = THEME.Panel
+		pauseBtn:SetAttribute("RestColor", THEME.Panel)
 		pauseBtn.TextColor3 = THEME.Text
 		statusLabel.Text = "● TRACKING"
 		statusLabel.TextColor3 = THEME.Good
@@ -907,35 +870,36 @@ clearBtn.Activated:Connect(function()
 	folders = {}; folderOrder = 0
 	allEntries = {}; totalFound = 0; entryCounter = 0
 	selectedRecord = nil
+	queue = {}
 	updateSendButton(); updateStats()
 end)
 
-local notifyOn = CONFIG.NotifyEnabled
 notifyBtn.Activated:Connect(function()
-	notifyOn = not notifyOn
-	CONFIG.NotifyEnabled = notifyOn
-	if notifyOn then
+	CONFIG.NotifyEnabled = not CONFIG.NotifyEnabled
+	if CONFIG.NotifyEnabled then
 		notifyBtn.Text = "🔔"
-		setButtonColor(notifyBtn, THEME.Panel)
+		notifyBtn.BackgroundColor3 = THEME.Panel
+		notifyBtn:SetAttribute("RestColor", THEME.Panel)
 		notifyBtn.TextColor3 = THEME.Text
 	else
 		notifyBtn.Text = "🔕"
-		setButtonColor(notifyBtn, THEME.PanelAlt)
+		notifyBtn.BackgroundColor3 = THEME.PanelAlt
+		notifyBtn:SetAttribute("RestColor", THEME.PanelAlt)
 		notifyBtn.TextColor3 = THEME.SubText
 	end
 end)
 
-local highlightOn = CONFIG.AutoHighlight
 highlightBtn.Activated:Connect(function()
-	highlightOn = not highlightOn
-	CONFIG.AutoHighlight = highlightOn
-	if highlightOn then
+	CONFIG.AutoHighlight = not CONFIG.AutoHighlight
+	if CONFIG.AutoHighlight then
 		highlightBtn.Text = "🎯"
-		setButtonColor(highlightBtn, THEME.Panel)
+		highlightBtn.BackgroundColor3 = THEME.Panel
+		highlightBtn:SetAttribute("RestColor", THEME.Panel)
 		highlightBtn.TextColor3 = THEME.Text
 	else
 		highlightBtn.Text = "🚫"
-		setButtonColor(highlightBtn, THEME.PanelAlt)
+		highlightBtn.BackgroundColor3 = THEME.PanelAlt
+		highlightBtn:SetAttribute("RestColor", THEME.PanelAlt)
 		highlightBtn.TextColor3 = THEME.SubText
 	end
 end)
@@ -958,24 +922,22 @@ sendBtn.Activated:Connect(function()
 		if ok then
 			sendBtn.Text = "✓"
 			sendBtn.TextColor3 = THEME.Good
-			notify("✅ Sent", "Forwarded to channel: " .. API.Channel, 3)
+			notify("✅ Sent", "Forwarded to channel: "..API.Channel, 3)
 		else
 			sendBtn.Text = "✕"
 			sendBtn.TextColor3 = THEME.Danger
 			notify("❌ Send failed", tostring(resp and resp.StatusMessage or resp), 5)
-			warn("[AssetTracker] POST failed:", resp)
 		end
 		task.wait(1.2)
-		if sendBtn and sendBtn.Parent then
+		if sendBtn.Parent then
 			sendBtn.Text = "📤"
-			sendBtn.TextColor3 = selectedRecord and Color3.fromRGB(255,255,255) or THEME.SubText
+			sendBtn.TextColor3 = selectedRecord and Color3.new(1,1,1) or THEME.SubText
 		end
 	end)
 end)
 
 closeBtn.Activated:Connect(function()
 	pcall(function() screen:Destroy() end)
-	print("[AssetTracker] UI closed.")
 end)
 
 if CONFIG.StartHidden then
@@ -990,7 +952,4 @@ updateSendButton()
 updateStats()
 applyFilter()
 
-print("╔══════════════════════════════════════════╗")
-print("║   ASSET ID TRACKER v2.3  —  LOADED       ║")
-print("║   Click 🔍 bubble (or RightShift) to open║")
-print("╚══════════════════════════════════════════╝")
+print("[AssetTracker v2.4] loaded — click 🔍 or press RightShift")
