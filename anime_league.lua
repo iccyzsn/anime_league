@@ -3,50 +3,85 @@ local Workspace = game:GetService("Workspace")
 -- ==========================================
 -- SETTINGS
 -- ==========================================
-local EGG_KEYWORD = "Egg" -- Looks for items with "Egg" in the name
-local EXCLUDE_PATH = "Plots.Plot" -- Ignores eggs inside pens/plots
-local ESP_HEIGHT = 5 -- How high above the egg the arrow appears
+local ESP_COLOR = Color3.fromRGB(0, 255, 0) -- Green arrow
+
+-- ==========================================
+-- HELPER FUNCTIONS
+-- ==========================================
+-- Checks if the item is an actual egg, not a base/spawn, and not in a pen
+local function isValidEgg(obj)
+    -- Must be a physical object
+    if not (obj:IsA("BasePart") or obj:IsA("Model")) then return false end
+    
+    -- Ignore EggBases and EggSpawns
+    if string.find(obj.Name, "Base") or string.find(obj.Name, "Spawn") then return false end
+    
+    -- Must have "Egg" in the name
+    if not string.find(obj.Name, "Egg") then return false end
+    
+    -- IGNORE pens/ranches
+    local path = obj:GetFullName()
+    if string.find(path, "Plots") or string.find(path, "Ranch") then 
+        return false 
+    end
+    
+    return true
+end
+
+-- Finds the actual 3D part to attach the ESP to
+local function getAdornee(obj)
+    if obj:IsA("BasePart") then return obj end
+    if obj:IsA("Model") then
+        if obj.PrimaryPart then return obj.PrimaryPart end
+        return obj:FindFirstChildWhichIsA("BasePart", true)
+    end
+    return nil
+end
 
 -- ==========================================
 -- ESP CREATION
 -- ==========================================
-local function createEggESP(egg)
-    -- Prevent duplicate ESP
-    if egg:FindFirstChild("EggESP") then return end
+local function applyEggESP(egg)
+    -- Prevent duplicates
+    if egg:FindFirstChild("EggESP_Arrow") then return end
 
-    -- Check if the egg is inside a pen/plot. If it is, stop here.
-    local eggPath = egg:GetFullName()
-    if string.find(eggPath, EXCLUDE_PATH) then
-        return
-    end
+    local adornee = getAdornee(egg)
+    if not adornee then return end
 
-    -- Create the Billboard GUI
+    -- Create Highlight so it's easy to see
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "EggESP_Highlight"
+    highlight.FillColor = ESP_COLOR
+    highlight.OutlineColor = Color3.new(1, 1, 1)
+    highlight.FillTransparency = 0.5
+    highlight.Parent = egg
+
+    -- Create the Arrow GUI
     local billboard = Instance.new("BillboardGui")
-    billboard.Name = "EggESP"
-    billboard.Size = UDim2.new(0, 100, 0, 50)
-    billboard.StudsOffset = Vector3.new(0, ESP_HEIGHT, 0)
+    billboard.Name = "EggESP_Arrow"
+    billboard.Size = UDim2.new(0, 100, 0, 60)
+    billboard.StudsOffset = Vector3.new(0, 4, 0) -- Floats 4 studs above
     billboard.AlwaysOnTop = true
-    billboard.MaxDistance = 150 -- Hides ESP if you are too far away
-    billboard.Adornee = egg
+    billboard.LightInfluence = 0
+    billboard.Adornee = adornee
     billboard.Parent = egg
 
-    -- Create the Arrow (Points down at the egg)
+    -- The Arrow (Points down)
     local arrow = Instance.new("TextLabel")
-    arrow.Size = UDim2.new(1, 0, 0, 25)
+    arrow.Size = UDim2.new(1, 0, 0, 30)
     arrow.BackgroundTransparency = 1
     arrow.Text = "▼"
-    arrow.TextColor3 = Color3.fromRGB(0, 255, 0) -- Green arrow
+    arrow.TextColor3 = ESP_COLOR
     arrow.TextScaled = true
     arrow.Font = Enum.Font.GothamBold
     arrow.Parent = billboard
 
-    -- Create the Name Label
+    -- The Name
     local nameLabel = Instance.new("TextLabel")
-    nameLabel.Size = UDim2.new(1, 0, 0, 20)
-    nameLabel.Position = UDim2.new(0, 0, 0, 25)
+    nameLabel.Size = UDim2.new(2, 0, 0, 20)
+    nameLabel.Position = UDim2.new(-0.5, 0, 0.5, 0)
     nameLabel.BackgroundTransparency = 1
-    -- Removes underscores (Sinister_Egg -> Sinister Egg)
-    nameLabel.Text = string.gsub(egg.Name, "_", " ") 
+    nameLabel.Text = string.gsub(egg.Name, "_", " ")
     nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
     nameLabel.TextStrokeTransparency = 0
     nameLabel.TextScaled = true
@@ -57,27 +92,19 @@ end
 -- ==========================================
 -- SCANNING LOGIC
 -- ==========================================
--- Scan for eggs already in the game
-local function scanExistingEggs()
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and string.find(obj.Name, EGG_KEYWORD) then
-            createEggESP(obj)
-        end
+-- Scan for eggs already spawned
+for _, obj in ipairs(Workspace:GetDescendants()) do
+    if isValidEgg(obj) then
+        applyEggESP(obj)
     end
 end
 
--- Listen for new eggs spawning into the game
+-- Listen for NEW eggs spawning
 Workspace.DescendantAdded:Connect(function(obj)
-    -- Wait a tiny second to ensure the item is fully loaded
-    task.wait(0.1)
-    
-    if obj:IsA("BasePart") and string.find(obj.Name, EGG_KEYWORD) then
-        -- Double check it's not in a pen
-        if not string.find(obj:GetFullName(), EXCLUDE_PATH) then
-            createEggESP(obj)
-        end
+    task.wait(0.2) -- Give it a second to load properties
+    if isValidEgg(obj) then
+        applyEggESP(obj)
     end
 end)
 
-scanExistingEggs()
-print("Egg ESP Loaded! Ignoring eggs inside plots/pens.")
+print("Egg ESP Loaded! Ignoring Bases and Pens.")
