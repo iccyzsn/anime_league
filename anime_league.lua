@@ -1,9 +1,3 @@
--- Anime League auto-load (safe)
-task.spawn(function()
-	pcall(loadstring, game:HttpGet(
-		"https://raw.githubusercontent.com/iccyzsn/anime_league/refs/heads/main/anime_league.lua"
-	))()
-end)
 
 --=============================================================================
 --  ASSET ID TRACKER  •  v2.4  (optimized)
